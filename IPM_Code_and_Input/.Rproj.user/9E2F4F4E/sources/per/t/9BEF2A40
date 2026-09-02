@@ -1,0 +1,28 @@
+{
+    "id": "9BEF2A40",
+    "path": "~/Dropbox/PC/Desktop/Pitch-Pine-Demography/Urmi Demography analysis/Code & Input/1_Exploratory_Analysis.R",
+    "project_path": "1_Exploratory_Analysis.R",
+    "type": "r_source",
+    "hash": "1451320033",
+    "contents": "",
+    "dirty": false,
+    "created": 1786393455255.0,
+    "source_on_save": false,
+    "relative_order": 2,
+    "properties": {
+        "tempName": "Untitled1",
+        "source_window_id": "",
+        "Source": "Source",
+        "cursorPosition": "819,28",
+        "scrollLine": "812",
+        "docOutlineVisible": "0"
+    },
+    "folds": "7|26|15|0|\n16|16|33|43|\n34|46|104|0|\n105|37|141|0|\n142|44|251|0|\n252|29|376|0|\n377|42|485|0|\n486|22|550|0|\n551|26|652|0|\n",
+    "lastKnownWriteTime": 1788192562,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1788192562153,
+    "read_only": false,
+    "read_only_alternatives": []
+}
