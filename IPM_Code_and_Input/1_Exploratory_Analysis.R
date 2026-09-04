@@ -771,7 +771,7 @@ pines_long|>
   geom_boxplot()+
   theme_bw()+facet_wrap(vars(AREA))
 
-#Creating dataframe for survival vs height analysis
+#Creating dataframe for survival vs height plotting
 fire_date <- as.Date("06/01/95",format= "%m/%d/%y")
 survival <- pines_long|>
   group_by(IND_ID)|>
@@ -792,7 +792,6 @@ survival <- pines_long|>
            time_length(difftime(START_DATE, fire_date),"years"))|>
   mutate(TimeSinceFire = round(TimeSinceFire, digits = 1))
 
-
 ggplot(survival, aes(HT,STAT_next))+
   geom_point()+theme_bw()+
   facet_wrap(~CensusInterval+AREA, scales = "free_x")
@@ -800,34 +799,6 @@ ggplot(survival, aes(HT,STAT_next))+
   geom_point()+theme_bw()+
   facet_wrap(~CensusInterval+TimeSinceFire, scales = "free_x")
 
-#Preliminary regressions and model comparison
-m_surv_ht <- glm(STAT_next~ 
-            HT+offset(log(CensusInterval)),
-            data = survival,family = binomial(link = "cloglog"))
-summary(m_surv_ht)
-AIC(m_surv_ht)
-
-m_surv_ht_quad <- glm(STAT_next~ 
-            HT+I(HT^2)+offset(log(CensusInterval)),
-            data = survival,family = binomial(link = "cloglog"))
-summary(m_surv_ht_quad)
-anova(m_surv_ht_quad)
-AIC(m_surv_ht_quad)
-
-m_surv_ht_quad_time <- glm((1-STAT_next)~ 
-            HT+I(HT^2)+TimeSinceFire+
-              offset(log(CensusInterval)),
-            data = survival,
-            family = binomial(link = "cloglog"))
-summary(m_surv_ht_quad_time)
-anova(m_surv_ht_quad_time)
-AIC(m_surv_ht_quad_time)
-
-# performance::r2(m)
-# hist(residuals(m))
-# plot(predict(m, type = "response"),residuals(m))
-# plot(log(temp$HT),residuals(m, type = "deviance"))
-# deviance(m) / df.residual(m)
 
 #Vital rates trial: growth----------------------------------------------
 #Calculating growth increment
