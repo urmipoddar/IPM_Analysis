@@ -1,5 +1,5 @@
 ## ************************************************************************** ##
-## Author: Urmi Poddar, Matthew Aiello-Lammens
+## Authors: Urmi Poddar, Matthew Aiello-Lammens
 
 ## Purpose:
 ## Read in and clean pine demography data
@@ -41,12 +41,6 @@ print(paste("Number of rows removed because COHORT is NA:", length(which(is.na(p
 pines <- pines %>% filter(!is.na(COHORT))
 
 ## Read in plot information
-
-## NOTE: In order to get this plot information I had to export data from the 
-## MS Access database to a csv file. This was done using the mdb-tools package in bash.
-## ```
-## mdb-export ./Pine_project/census\ 2003/pinedatams.mdb plotdatams > data/plot_information.csv
-## ```
 
 ## Meta-data for these data can be found in the file:
 ## ./Pine_project/Documentation/Seedling files/plotdatahistory.doc
@@ -438,8 +432,19 @@ any(pines[wd_cols]==0, na.rm = T) #all zeros removed now
 #First I replace the HTB15 column with 15W/subs
 #The HTB15 column seems incorrect and 15W/subs seems to be the corrected version
 pines <- pines|>
+  rename(HTB15_corrected = `15W/subs`)
+
+#In the HTB15 column, some heights recorded are as ">490" or ">450"
+#We will set these as NA
+pines <- pines|>
+  mutate(HTB15_corrected = 
+    if_else(HTB15 %in% c(">450",">490"), NA,
+                       HTB15_corrected))
+
+#Now removing the incorrect HTB15 column
+pines <- pines|>
   select(!HTB15)|>
-  rename(HTB15 = `15W/subs`)
+  rename(HTB15 = HTB15_corrected)
 
 #comparing HTN vs HTB (both were measured in census 9)
 ggplot(pines, aes(HTB9, HTN9))+
