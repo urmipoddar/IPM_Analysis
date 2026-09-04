@@ -1,6 +1,5 @@
 ## ************************************************************************** ##
-## Author: Matthew Aiello-Lammens
-## Modified by: Urmi Poddar
+## Author: Urmi Poddar, Matthew Aiello-Lammens
 
 ## Purpose:
 ## Read in and clean pine demography data
@@ -539,6 +538,9 @@ pines_long <- pines|>
 pines_long <- pines_long|>
   left_join(census_dates)
 
+#removing plots with special treatments
+pines_long <- pines_long|>
+  filter(TMT=="NONE")
 #Exporting to csv-------------------------------------------
 ## THIS CODE CHUNK ADDED BY URMI
 
