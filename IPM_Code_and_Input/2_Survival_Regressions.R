@@ -42,6 +42,7 @@ pines_long <- pines_long|>
 
 #creating dataframe for survival vs height analysis
 survival_dat <- pines_long|>
+  arrange(IND_ID, CENSUS_NUM, START_DATE)|>
   group_by(IND_ID)|>
   #creating column for death (1 if dead, 0 if alive)
   mutate(Dead = case_when(STAT == 0 ~ 1L, 
@@ -68,6 +69,11 @@ table(survival_dat$CENSUS_next - survival_dat$CENSUS_NUM)
 table(survival_dat$CensusInterval)
 
 #Fitting models----------------------------------------------------
+#Baseline model - random effects and time offset only
+m_baseline <- glmer(Dead_next ~ 
+  offset(log(CensusInterval))+
+  (1|PLOTCODE), data = survival_dat,
+  family = binomial(link="cloglog"))
 
 #Height only model - linear effect of height
 m_ht <- glmer(Dead_next ~ HT+
@@ -115,6 +121,21 @@ m_ht2_area_htarea_time <- glmer(Dead_next ~ poly(HT, 2, raw=T)*AREA+
   (1|PLOTCODE),  data = survival_dat,
  family = binomial(link="cloglog"))
 
+#Height, AREA & time since fire, linear plus log height
+m_htLL_area_time <- glmer(Dead_next ~ HT+log(HT)+AREA+
+  TimeSinceFire+
+  offset(log(CensusInterval))+ 
+  (1|PLOTCODE),  data = survival_dat,
+ family = binomial(link="cloglog"))
+
+#Height, AREA & time since fire, height x area interaction, linear + log ht
+m_htLL_area_htarea_time <- glmer(Dead_next ~ HT+log(HT)+AREA+
+  HT:AREA+log(HT):AREA+
+  TimeSinceFire+
+  offset(log(CensusInterval))+ 
+  (1|PLOTCODE),  data = survival_dat,
+ family = binomial(link="cloglog"))
+
 #Height, AREA & time since fire, spline for height
 m_htS_area_time <- glmer(Dead_next ~ ns(HT, 3)+AREA+
   TimeSinceFire+
@@ -132,6 +153,7 @@ m_htS_area_htarea_time <- glmer(Dead_next ~ ns(HT, 3)*AREA+
 #model diagnostics-------------------------------------------------
 #list of models
 models <- list(
+  m_baseline = m_baseline,
   m_ht = m_ht,
   m_ht_area = m_ht_area,
   m_ht_area_htarea = m_ht_area_htarea,
@@ -139,6 +161,8 @@ models <- list(
   m_ht_area_htarea_time = m_ht_area_htarea_time,
   m_ht2_area_time = m_ht2_area_time,
   m_ht2_area_htarea_time = m_ht2_area_htarea_time,
+  m_htLL_area_time = m_htLL_area_time,
+  m_htLL_area_htarea_time = m_htLL_area_htarea_time,
   m_htS_area_time = m_htS_area_time,
   m_htS_area_htarea_time = m_htS_area_htarea_time)
 
@@ -184,11 +208,14 @@ newdat <- expand.grid( #generating new data for plotting
   AREA = levels(survival_dat$AREA),
   CensusInterval = 1)
 
-#predicted values from linear, quadratic and splines
+#Plotting shape of curves
 newdat$MortProb_linear <- predict(m_ht_area_htarea_time,
           newdata = newdat, type = "response", 
         re.form = NA)
 newdat$MortProb_spline <- predict(m_htS_area_htarea_time,
+          newdata = newdat, type = "response", 
+        re.form = NA)
+newdat$MortProb_LL <- predict(m_htLL_area_htarea_time,
           newdata = newdat, type = "response", 
         re.form = NA)
 newdat$MortProb_quad <- predict(m_ht2_area_htarea_time,
@@ -197,26 +224,34 @@ newdat$MortProb_quad <- predict(m_ht2_area_htarea_time,
 
 ggplot(newdat, aes(HT, MortProb_linear, col=AREA))+
   geom_point()+theme_bw()+xlab("Height")+
-  ylab("Predicted Mortality Rate")
-ggplot(newdat, aes(HT, MortProb_spline, col=AREA))+
+  ylab("Predicted Mortality Probability")+
+  ggtitle("Linear effect of height")
+ggplot(newdat, aes(HT, MortProb_LL, col=AREA))+
   geom_point()+theme_bw()+xlab("Height")+
-  ylab("Predicted Mortality Rate")
+  ylab("Predicted Mortality Probability")+
+  ggtitle("Linear + log effect of height")
 ggplot(newdat, aes(HT, MortProb_quad, col=AREA))+
   geom_point()+theme_bw()+xlab("Height")+
-  ylab("Predicted Mortality Rate")
+  ylab("Predicted Mortality Probability")+
+  ggtitle("quadratic effect of height")
+ggplot(newdat, aes(HT, MortProb_spline, col=AREA))+
+  geom_point()+theme_bw()+xlab("Height")+
+  ylab("Predicted Mortality Probability")+
+  ggtitle("Spline for height")
+
 
 survival_dat|>filter(CENSUS_NUM==11)|>
   ggplot(aes(HT, Dead_next,fill = AREA))+
   geom_point(pch=21, size = 2, alpha =0.5)+theme_bw()+
   facet_wrap(~AREA)
 
-#Model comparisons-----------------------------------------
+#Model comparisons on full dataset-----------------------------------------
 # Comparing models based on their fit to training data        
 #comparing AICs
 model_perform <- tibble::tibble(
   Name = names(models),
   AIC = sapply(models, AIC))
-model_perform
+model_perform|>arrange(AIC)
 
 #comparing brier scores
 brier_score_train <- function(model, obs = survival_dat$Dead_next){
@@ -251,16 +286,6 @@ TrainDat <- survival_dat|>
 TestDat <- survival_dat|>
   filter(CENSUS_NUM>10)
 
-#To improve the stability of the quadratic models
-#I will z-transform height
-mean_ht <- mean(TrainDat$HT)
-sd_ht <- sd(TrainDat$HT)
-
-TestDat <- TestDat|>
-  mutate(HT = (HT - mean_ht) / sd_ht)
-TrainDat <- TrainDat|>
-  mutate(HT = (HT - mean_ht) / sd_ht)
-
 #Redefining functions for brier score and logloss
 brier_score <- function(pred, obs){
   return(mean((obs - pred)^2))}
@@ -288,15 +313,15 @@ for(m in names(models)){
 }
 model_perform
 
-#Model comparisons 2: cross-validation-----------------------------------------        
+#Model comparisons 3: cross-validation-----------------------------------------        
 # Comparing models based on predictive accuracy on unseen data
-# with multiple 3 fold cross validation
+# with 3 fold expanding window cross validation (CV)
 
+#Adding columns for storing CV ccuracy scores
 model_perform <- model_perform|>
-  mutate(CV1_Brier = NA, CV2_Brier = NA, CV3_Brier =NA)
+  mutate(CV1_Brier = NA, CV2_Brier = NA, CV3_Brier =NA,
+  CV1_LogLoss = NA, CV2_LogLoss = NA, CV3_LogLoss =NA)
 
-# Test-train split - 
-# data upto census 10 used for training, rest for testing
 folds <- 3 #number of cross-validation folds
 min_training_size <- 8 #minimum number of censuses in training data
 test_size <- 4 #number of census in test data
@@ -314,15 +339,6 @@ for( i in 1:folds){
   TestDat <- survival_dat|>
     filter(CENSUS_NUM %in% test_censuses)
 
-  #z-tranforming height to improve the stability of the quadratic models
-  mean_ht <- mean(TrainDat$HT)
-  sd_ht <- sd(TrainDat$HT)
-
-  TestDat <- TestDat|>
-    mutate(HT = (HT - mean_ht) / sd_ht)
-  TrainDat <- TrainDat|>
-    mutate(HT = (HT - mean_ht) / sd_ht)
-
   #Re-fitting models and testing accuracy
   for(m in names(models)){
     model <- models[[m]]
@@ -339,10 +355,14 @@ for( i in 1:folds){
     #calculating accuracy
     brier <-
       brier_score(preds, TestDat$Dead_next)
+    LL <-
+      logloss(preds, TestDat$Dead_next)
     
     #recording results
-    col <- paste0("CV", i, "_Brier")
-    model_perform[which(model_perform$Name==m), col] <- brier
+    col_brier <- paste0("CV", i, "_Brier")
+    model_perform[which(model_perform$Name==m), col_brier] <- brier
+    col_LL <- paste0("CV", i, "_LogLoss")
+    model_perform[which(model_perform$Name==m), col_LL] <- LL
 
     #tracking progress
     print(c(i, m, isSingular(new_model)))
@@ -351,7 +371,13 @@ for( i in 1:folds){
 }
 
 model_perform|>
-  select(Name, TT_Brier, CV1_Brier:CV3_Brier)|>
+  select(Name, AIC, CV1_Brier:CV3_Brier)|>
   rowwise()|>
   mutate(mean_Brier = mean(CV1_Brier:CV3_Brier))|>
   arrange(mean_Brier)
+
+model_perform|>
+  select(Name, AIC, CV1_LogLoss:CV3_LogLoss)|>
+  rowwise()|>
+  mutate(mean_LogLoss = mean(CV1_LogLoss:CV3_LogLoss))|>
+  arrange(mean_LogLoss)
