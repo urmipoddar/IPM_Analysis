@@ -280,11 +280,11 @@ model_perform$TT_Brier <- NA
 model_perform$TT_LogLoss <- NA
 
 # Test-train split - 
-# data upto census 10 used for training, rest for testing
+# data upto census 9 used for training, rest for testing
 TrainDat <- survival_dat|>
-  filter(CENSUS_NUM<=10)
+  filter(CENSUS_NUM<=9)
 TestDat <- survival_dat|>
-  filter(CENSUS_NUM>10)
+  filter(CENSUS_NUM>9)
 
 #Redefining functions for brier score and logloss
 brier_score <- function(pred, obs){
@@ -311,7 +311,9 @@ for(m in names(models)){
   print(c(m, isSingular(new_model)))
   print(new_model@optinfo$conv$lme4$messages)
 }
-model_perform
+model_perform|>
+  select(Name, AIC,TT_Brier,TT_LogLoss)|>
+  arrange(TT_Brier)
 
 #Model comparisons 3: cross-validation-----------------------------------------        
 # Comparing models based on predictive accuracy on unseen data
