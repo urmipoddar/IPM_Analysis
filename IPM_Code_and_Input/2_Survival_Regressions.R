@@ -11,6 +11,7 @@ library(lme4)
 library(performance)
 library(splines)
 library(DHARMa)
+library(pROC)
 
 pines_long <- read.csv("Data/pine_demography_cleaned_long.csv")
 plot_info <- read.csv("Data/plot_information.csv")
@@ -21,12 +22,10 @@ plot_info <- plot_info|>
   select(!c(SUBPLOT, AREA, PLTAREA, SDLAREA, TMT))
 
 #Converting census start date column to Date format
-#(useful for plotting)
 pines_long <- pines_long|>
   mutate(START_DATE = as.Date(START_DATE))
 
 #Converting area and site area to factors
-#(useful for plotting)
 pines_long$AREA <- factor(pines_long$AREA, 
                           levels = c("DW", "SCC", "RP"))
 pines_long$SITEAREA <- factor(pines_long$SITEAREA, 
@@ -63,10 +62,10 @@ survival_dat <- pines_long|>
   mutate(CensusInterval = round(CensusInterval, digits = 1))
 
 #ensuring that only consecutive censuses are paired
-table(survival_dat$CENSUS_next - survival_dat$CENSUS_NUM)
+table(survival_dat$CENSUS_next - survival_dat$CENSUS_NUM) #everything is correct
 
 #checking values of census interval
-table(survival_dat$CensusInterval)
+table(survival_dat$CensusInterval) #looks correct
 
 #Fitting models----------------------------------------------------
 #Baseline model - random effects and time offset only
@@ -273,11 +272,21 @@ logloss_train <- function(model, obs = survival_dat$Dead_next){
 model_perform$LogLoss <- sapply(models, logloss_train)
 model_perform
 
-#Model comparisons 2: test-train split-----------------------------------------        
+#comparing ROC AUC
+auc_train <- function(model, obs = survival_dat$Dead_next){
+  pred <- predict(model, type="response",re.form = NA)
+  roc_model <- roc(obs, pred)
+  return(as.numeric(auc(roc_model)))
+}
+model_perform$ROC_AUC <- sapply(models, auc_train)
+model_perform
+
+#Model comparisons 2: time-series test-train split-----------------------------------------        
 # Comparing models based on predictive accuracy on unseen data
 
 model_perform$TT_Brier <- NA
 model_perform$TT_LogLoss <- NA
+model_perform$TT_AUC <- NA
 
 # Test-train split - 
 # data upto census 9 used for training, rest for testing
@@ -286,7 +295,7 @@ TrainDat <- survival_dat|>
 TestDat <- survival_dat|>
   filter(CENSUS_NUM>9)
 
-#Redefining functions for brier score and logloss
+#Redefining functions for brier score, logloss and ROC-AUC
 brier_score <- function(pred, obs){
   return(mean((obs - pred)^2))}
 
@@ -295,6 +304,11 @@ logloss <- function(pred, obs){
   pred <- pmin(pmax(pred, eps), 1 - eps)
   return(-mean(obs * log(pred) +
       (1 - obs) * log(1 - pred)))}
+
+AUC <- function(pred, obs){
+  ROC <- roc(obs, pred)
+  return(as.numeric(auc(ROC)))
+}
 
 #Re-fitting models and testing accuracy
 for(m in names(models)){
@@ -308,21 +322,30 @@ for(m in names(models)){
     brier_score(preds, TestDat$Dead_next)
   model_perform$TT_LogLoss[model_perform$Name ==m] <-
     logloss(preds, TestDat$Dead_next)
+   model_perform$TT_AUC[model_perform$Name ==m] <-
+    AUC(preds, TestDat$Dead_next)
+
+
   print(c(m, isSingular(new_model)))
   print(new_model@optinfo$conv$lme4$messages)
 }
 model_perform|>
-  select(Name, AIC,TT_Brier,TT_LogLoss)|>
+  select(Name, AIC,TT_Brier,TT_LogLoss, TT_AUC)|>
   arrange(TT_Brier)
 
-#Model comparisons 3: cross-validation-----------------------------------------        
+model_perform|>
+  select(Name, AIC,TT_Brier,TT_LogLoss, TT_AUC)|>
+  arrange(TT_AUC)
+
+#Model comparisons 3: time-series cross-validation-----------------------------------------        
 # Comparing models based on predictive accuracy on unseen data
 # with 3 fold expanding window cross validation (CV)
 
 #Adding columns for storing CV ccuracy scores
 model_perform <- model_perform|>
   mutate(CV1_Brier = NA, CV2_Brier = NA, CV3_Brier =NA,
-  CV1_LogLoss = NA, CV2_LogLoss = NA, CV3_LogLoss =NA)
+  CV1_LogLoss = NA, CV2_LogLoss = NA, CV3_LogLoss =NA,
+  CV1_AUC = NA, CV2_AUC = NA, CV3_AUC =NA )
 
 folds <- 3 #number of cross-validation folds
 min_training_size <- 8 #minimum number of censuses in training data
@@ -359,12 +382,15 @@ for( i in 1:folds){
       brier_score(preds, TestDat$Dead_next)
     LL <-
       logloss(preds, TestDat$Dead_next)
+    ROC_AUC <- AUC(preds,TestDat$Dead_next)
     
     #recording results
     col_brier <- paste0("CV", i, "_Brier")
     model_perform[which(model_perform$Name==m), col_brier] <- brier
     col_LL <- paste0("CV", i, "_LogLoss")
     model_perform[which(model_perform$Name==m), col_LL] <- LL
+    col_AUC <- paste0("CV", i, "_AUC")
+    model_perform[which(model_perform$Name==m), col_AUC] <- ROC_AUC
 
     #tracking progress
     print(c(i, m, isSingular(new_model)))
@@ -383,3 +409,9 @@ model_perform|>
   rowwise()|>
   mutate(mean_LogLoss = mean(CV1_LogLoss:CV3_LogLoss))|>
   arrange(mean_LogLoss)
+
+model_perform|>
+  select(Name, AIC, CV1_AUC:CV3_AUC)|>
+  rowwise()|>
+  mutate(mean_AUC = mean(CV1_AUC:CV3_AUC))|>
+  arrange(desc(mean_AUC))
