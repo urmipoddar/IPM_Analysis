@@ -12,6 +12,7 @@ library(performance)
 library(splines)
 library(DHARMa)
 library(pROC)
+library(broom.mixed)
 
 pines_long <- read.csv("Data/pine_demography_cleaned_long.csv")
 plot_info <- read.csv("Data/plot_information.csv")
@@ -41,7 +42,7 @@ pines_long <- pines_long|>
 
 #creating dataframe for survival vs height analysis
 survival_dat <- pines_long|>
-  arrange(IND_ID, CENSUS_NUM, START_DATE)|>
+  arrange(IND_ID, CENSUS_NUM)|>
   group_by(IND_ID)|>
   #creating column for death (1 if dead, 0 if alive)
   mutate(Dead = case_when(STAT == 0 ~ 1L, 
@@ -67,86 +68,180 @@ table(survival_dat$CENSUS_next - survival_dat$CENSUS_NUM) #everything is correct
 #checking values of census interval
 table(survival_dat$CensusInterval) #looks correct
 
+#Exploratory model---------------------------------------
+# fitting a model with binned height 
+# to explore shape of height vs survival relationship
+
+#creating height bins
+survival_dat$HT_bin <- cut(survival_dat$HT,
+   breaks = quantile(survival_dat$HT, 
+    probs = seq(0,1,0.05), na.rm=TRUE), include.lowest = TRUE)
+
+#checking sample size in each bin
+survival_dat|>
+  ungroup()|>
+  count(HT_bin) #>500 points in each bin, i.e. sufficient sample size
+
+#fitting model on binned height
+m_ht_bins <- glmer(Dead_next ~ HT_bin + AREA + TimeSinceFire +
+  offset(log(CensusInterval)) +
+  (1|SITEAREA)+(1|PLOTCODE)+(1|IND_ID),
+  data = survival_dat, family = binomial(link="cloglog"))
+
+#extracting coefficients for plotting
+coefs <- tidy(m_ht_bins, 
+  effects = "fixed", conf.int = TRUE)
+coefs <- coefs |> filter(str_detect(term, "^HT_bin"))
+coefs <- coefs |>
+  rename(cloglog_est = estimate, 
+    cloglog_lo = conf.low, 
+    cloglog_hi = conf.high)
+
+#extracting intercept
+intercept <- tidy(m_ht_bins, effects = "fixed") |>
+  filter(term == "(Intercept)") |> pull(estimate)
+
+#setting the first bin as reference
+ref_bin <- levels(survival_dat$HT_bin)[1]
+coefs <- bind_rows(
+  tibble(term = paste0("HT_bin", ref_bin), 
+  cloglog_est = 0, cloglog_lo = NA, cloglog_hi = NA),
+  coefs)
+
+#extracting mid point of each bin
+bin_levels <- levels(survival_dat$HT_bin)
+bin_bounds <- bin_levels |>
+  # parsing the (a,b] interval labels into numeric midpoints
+  str_remove_all("\\[|\\]|\\(|\\)") |>
+  str_split(",", simplify = TRUE) |>
+  apply(2, as.numeric)
+
+bin_midpoints <- tibble(
+  term = paste0("HT_bin", bin_levels),
+  midpoint = rowMeans(bin_bounds)
+)
+
+coefs <- coefs |> left_join(bin_midpoints, by = "term")
+
+#Plotting
+ggplot(coefs, aes(x = midpoint, y = cloglog_est)) +
+  geom_point(size = 2) +
+  geom_errorbar(aes(ymin = cloglog_lo,
+     ymax = cloglog_hi), width = 0) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey50") +
+  labs(x = "Height (cm), bin midpoint",
+       y = "CLog-log hazard relative to reference bin",
+       title = "Nonparametric mortality-hazard shape by height bin") +
+  theme_bw()
+
 #Fitting models----------------------------------------------------
 #Baseline model - random effects and time offset only
 m_baseline <- glmer(Dead_next ~ 
   offset(log(CensusInterval))+
-  (1|PLOTCODE), data = survival_dat,
+  (1|SITEAREA)+(1|PLOTCODE)+(1|IND_ID),
+  data = survival_dat,
   family = binomial(link="cloglog"))
 
 #Height only model - linear effect of height
 m_ht <- glmer(Dead_next ~ HT+
   offset(log(CensusInterval))+ 
-  (1|PLOTCODE),  data = survival_dat,
+  (1|SITEAREA)+(1|PLOTCODE)+(1|IND_ID),
+  data = survival_dat,
  family = binomial(link="cloglog"))
 
 #Height & AREA
 m_ht_area <- glmer(Dead_next ~ HT+AREA+
   offset(log(CensusInterval))+ 
-  (1|PLOTCODE),  data = survival_dat,
+  (1|SITEAREA)+(1|PLOTCODE)+(1|IND_ID),
+  data = survival_dat,
  family = binomial(link="cloglog"))
 
 #Height & AREA - ht x area interaction
 m_ht_area_htarea <- glmer(Dead_next ~ HT*AREA+
   offset(log(CensusInterval))+ 
-  (1|PLOTCODE),  data = survival_dat,
+  (1|SITEAREA)+(1|PLOTCODE)+(1|IND_ID),
+  data = survival_dat,
  family = binomial(link="cloglog"))
 
 #Height, AREA & time since fire
 m_ht_area_time <- glmer(Dead_next ~ 
   HT+AREA+TimeSinceFire+
   offset(log(CensusInterval))+ 
-  (1|PLOTCODE),  data = survival_dat,
+  (1|SITEAREA)+(1|PLOTCODE)+(1|IND_ID),
+  data = survival_dat,
  family = binomial(link="cloglog"))
 
 #Height, AREA & time since fire, height x area interaction
 m_ht_area_htarea_time <- glmer(Dead_next ~ HT*AREA+
   TimeSinceFire+
   offset(log(CensusInterval))+ 
-  (1|PLOTCODE),  data = survival_dat,
+  (1|SITEAREA)+(1|PLOTCODE)+(1|IND_ID),
+  data = survival_dat,
  family = binomial(link="cloglog"))
 
 #Height, AREA & time since fire, quadratic height
 m_ht2_area_time <- glmer(Dead_next ~ poly(HT, 2, raw=T)+AREA+
   TimeSinceFire+
   offset(log(CensusInterval))+ 
-  (1|PLOTCODE),  data = survival_dat,
+  (1|SITEAREA)+(1|PLOTCODE)+(1|IND_ID),
+  data = survival_dat,
  family = binomial(link="cloglog"))
 
 #Height, AREA & time since fire, height x area interaction, quadratic ht
 m_ht2_area_htarea_time <- glmer(Dead_next ~ poly(HT, 2, raw=T)*AREA+
   TimeSinceFire+
   offset(log(CensusInterval))+ 
-  (1|PLOTCODE),  data = survival_dat,
+  (1|SITEAREA)+(1|PLOTCODE)+(1|IND_ID),
+  data = survival_dat,
  family = binomial(link="cloglog"))
 
 #Height, AREA & time since fire, linear plus log height
 m_htLL_area_time <- glmer(Dead_next ~ HT+log(HT)+AREA+
   TimeSinceFire+
   offset(log(CensusInterval))+ 
-  (1|PLOTCODE),  data = survival_dat,
- family = binomial(link="cloglog"))
+  (1|SITEAREA)+(1|PLOTCODE)+(1|IND_ID),
+  data = survival_dat,
+  family = binomial(link="cloglog"))
 
 #Height, AREA & time since fire, height x area interaction, linear + log ht
 m_htLL_area_htarea_time <- glmer(Dead_next ~ HT+log(HT)+AREA+
   HT:AREA+log(HT):AREA+
   TimeSinceFire+
   offset(log(CensusInterval))+ 
-  (1|PLOTCODE),  data = survival_dat,
+  (1|SITEAREA)+(1|PLOTCODE)+(1|IND_ID),
+  data = survival_dat,
+ family = binomial(link="cloglog"))
+
+#Height, AREA & time since fire, log height
+m_htLog_area_time <- glmer(Dead_next ~ log(HT)+AREA+
+  TimeSinceFire+
+  offset(log(CensusInterval))+ 
+  (1|SITEAREA)+(1|PLOTCODE)+(1|IND_ID),
+  data = survival_dat,
+  family = binomial(link="cloglog"))
+
+#Height, AREA & time since fire, height x area interaction, log ht
+m_htLog_area_htarea_time <- glmer(Dead_next ~ log(HT)*AREA+
+  TimeSinceFire+
+  offset(log(CensusInterval))+ 
+  (1|SITEAREA)+(1|PLOTCODE)+(1|IND_ID),
+  data = survival_dat,
  family = binomial(link="cloglog"))
 
 #Height, AREA & time since fire, spline for height
 m_htS_area_time <- glmer(Dead_next ~ ns(HT, 3)+AREA+
   TimeSinceFire+
   offset(log(CensusInterval))+ 
-  (1|PLOTCODE),  data = survival_dat,
+  (1|SITEAREA)+(1|PLOTCODE)+(1|IND_ID),
+  data = survival_dat,
  family = binomial(link="cloglog"))
 
 #Height, AREA & time since fire, height x area interaction, spline for height
 m_htS_area_htarea_time <- glmer(Dead_next ~ ns(HT, 3)*AREA+
   TimeSinceFire+
   offset(log(CensusInterval))+ 
-  (1|PLOTCODE),  data = survival_dat,
+  (1|SITEAREA)+(1|PLOTCODE)+(1|IND_ID),
+  data = survival_dat,
  family = binomial(link="cloglog"))
 
 #model diagnostics-------------------------------------------------
@@ -162,6 +257,8 @@ models <- list(
   m_ht2_area_htarea_time = m_ht2_area_htarea_time,
   m_htLL_area_time = m_htLL_area_time,
   m_htLL_area_htarea_time = m_htLL_area_htarea_time,
+  m_htLog_area_time = m_htLog_area_time,
+  m_htLog_area_htarea_time = m_htLog_area_htarea_time,
   m_htS_area_time = m_htS_area_time,
   m_htS_area_htarea_time = m_htS_area_htarea_time)
 
@@ -174,15 +271,16 @@ model_diagnostics <- tibble::tibble(
      \(x) x@optinfo$conv$lme4$messages),
   DispersionRatio = sapply(models, \(x) 
       check_overdispersion(x)$dispersion_ratio),
-  AcrossPlotVar = sapply(models, \(x) VarCorr(x)$PLOTCODE|>as.numeric()))
+  AcrossPlotVar = sapply(models, \(x) VarCorr(x)$PLOTCODE|>as.numeric()),
+  AcrossIndVar = sapply(models, \(x) VarCorr(x)$IND_ID|>as.numeric()))
 model_diagnostics
 
 #plotting DHARMa residuals
 residuals <- lapply(models, simulateResiduals)
 for (m in names(residuals)) {
-  plot(residuals[[m]], title = m)
+  plot(residuals[[m]], title = m, quantreg = T)
   dev.new()
-}
+} #some of the models have significant overdispersion, but effect size is not too high
 
 #checking for significant outliers
 model_diagnostics$OutlierSig = NA
@@ -190,12 +288,12 @@ for(m in names(residuals)){
   print(m)
   outlier_test <- 
       testOutliers(residuals[[m]], type = "bootstrap")
-  print(outlier_test)
+  print(outlier_test) 
 
   model_diagnostics$OutlierSig[model_diagnostics$Name==m] <- 
     outlier_test$p.value < 0.05
 }
-View(model_diagnostics)
+View(model_diagnostics) #some models have significant outliers, but their number is small
 
 #checking the shape of height vs survival curves
 newdat <- expand.grid( #generating new data for plotting
@@ -217,6 +315,9 @@ newdat$MortProb_spline <- predict(m_htS_area_htarea_time,
 newdat$MortProb_LL <- predict(m_htLL_area_htarea_time,
           newdata = newdat, type = "response", 
         re.form = NA)
+newdat$MortProb_Log <- predict(m_htLog_area_htarea_time,
+          newdata = newdat, type = "response", 
+        re.form = NA)
 newdat$MortProb_quad <- predict(m_ht2_area_htarea_time,
           newdata = newdat, type = "response", 
         re.form = NA)
@@ -229,6 +330,10 @@ ggplot(newdat, aes(HT, MortProb_LL, col=AREA))+
   geom_point()+theme_bw()+xlab("Height")+
   ylab("Predicted Mortality Probability")+
   ggtitle("Linear + log effect of height")
+ggplot(newdat, aes(HT, MortProb_Log, col=AREA))+
+  geom_point()+theme_bw()+xlab("Height")+
+  ylab("Predicted Mortality Probability")+
+  ggtitle("Log effect of height")
 ggplot(newdat, aes(HT, MortProb_quad, col=AREA))+
   geom_point()+theme_bw()+xlab("Height")+
   ylab("Predicted Mortality Probability")+
@@ -332,10 +437,6 @@ for(m in names(models)){
 model_perform|>
   select(Name, AIC,TT_Brier,TT_LogLoss, TT_AUC)|>
   arrange(TT_Brier)
-
-model_perform|>
-  select(Name, AIC,TT_Brier,TT_LogLoss, TT_AUC)|>
-  arrange(TT_AUC)
 
 #Model comparisons 3: time-series cross-validation-----------------------------------------        
 # Comparing models based on predictive accuracy on unseen data
