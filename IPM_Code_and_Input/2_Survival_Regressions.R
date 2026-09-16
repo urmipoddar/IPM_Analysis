@@ -7,7 +7,7 @@
 ## ************************************************************************** ##
 #Loading data and packages-----------------------------------------
 library(tidyverse)
-library(lme4)
+library(glmmTMB)
 library(performance)
 library(splines)
 library(DHARMa)
@@ -69,35 +69,35 @@ table(survival_dat$CensusInterval) #looks correct
 
 #Fitting models----------------------------------------------------
 #Baseline model - random effects and time offset only
-m_baseline <- glmer(Dead_next ~ 
+mSurv_baseline <- glmmTMB(Dead_next ~ 
   offset(log(CensusInterval))+
   (1|SITEAREA)+(1|PLOTCODE)+(1|IND_ID),
   data = survival_dat,
   family = binomial(link="cloglog"))
 
 #Height only model - linear effect of height
-m_ht <- glmer(Dead_next ~ HT+
+mSurv_ht <- glmmTMB(Dead_next ~ HT+
   offset(log(CensusInterval))+ 
   (1|SITEAREA)+(1|PLOTCODE)+(1|IND_ID),
   data = survival_dat,
  family = binomial(link="cloglog"))
 
 #Height & AREA
-m_ht_area <- glmer(Dead_next ~ HT+AREA+
+mSurv_ht_area <- glmmTMB(Dead_next ~ HT+AREA+
   offset(log(CensusInterval))+ 
   (1|SITEAREA)+(1|PLOTCODE)+(1|IND_ID),
   data = survival_dat,
  family = binomial(link="cloglog"))
 
 #Height & AREA - ht x area interaction
-m_ht_area_htarea <- glmer(Dead_next ~ HT*AREA+
+mSurv_ht_area_htarea <- glmmTMB(Dead_next ~ HT*AREA+
   offset(log(CensusInterval))+ 
   (1|SITEAREA)+(1|PLOTCODE)+(1|IND_ID),
   data = survival_dat,
  family = binomial(link="cloglog"))
 
 #Height, AREA & time since fire
-m_ht_area_time <- glmer(Dead_next ~ 
+mSurv_ht_area_time <- glmmTMB(Dead_next ~ 
   HT+AREA+TimeSinceFire+
   offset(log(CensusInterval))+ 
   (1|SITEAREA)+(1|PLOTCODE)+(1|IND_ID),
@@ -105,7 +105,7 @@ m_ht_area_time <- glmer(Dead_next ~
  family = binomial(link="cloglog"))
 
 #Height, AREA & time since fire, height x area interaction
-m_ht_area_htarea_time <- glmer(Dead_next ~ HT*AREA+
+mSurv_ht_area_htarea_time <- glmmTMB(Dead_next ~ HT*AREA+
   TimeSinceFire+
   offset(log(CensusInterval))+ 
   (1|SITEAREA)+(1|PLOTCODE)+(1|IND_ID),
@@ -113,7 +113,7 @@ m_ht_area_htarea_time <- glmer(Dead_next ~ HT*AREA+
  family = binomial(link="cloglog"))
 
 #Height, AREA & time since fire, quadratic height
-m_ht2_area_time <- glmer(Dead_next ~ poly(HT, 2, raw=T)+AREA+
+mSurv_ht2_area_time <- glmmTMB(Dead_next ~ poly(HT, 2, raw=T)+AREA+
   TimeSinceFire+
   offset(log(CensusInterval))+ 
   (1|SITEAREA)+(1|PLOTCODE)+(1|IND_ID),
@@ -121,7 +121,7 @@ m_ht2_area_time <- glmer(Dead_next ~ poly(HT, 2, raw=T)+AREA+
  family = binomial(link="cloglog"))
 
 #Height, AREA & time since fire, height x area interaction, quadratic ht
-m_ht2_area_htarea_time <- glmer(Dead_next ~ poly(HT, 2, raw=T)*AREA+
+mSurv_ht2_area_htarea_time <- glmmTMB(Dead_next ~ poly(HT, 2, raw=T)*AREA+
   TimeSinceFire+
   offset(log(CensusInterval))+ 
   (1|SITEAREA)+(1|PLOTCODE)+(1|IND_ID),
@@ -129,7 +129,7 @@ m_ht2_area_htarea_time <- glmer(Dead_next ~ poly(HT, 2, raw=T)*AREA+
  family = binomial(link="cloglog"))
 
 #Height, AREA & time since fire, linear plus log height
-m_htLL_area_time <- glmer(Dead_next ~ HT+log(HT)+AREA+
+mSurv_htLL_area_time <- glmmTMB(Dead_next ~ HT+log(HT)+AREA+
   TimeSinceFire+
   offset(log(CensusInterval))+ 
   (1|SITEAREA)+(1|PLOTCODE)+(1|IND_ID),
@@ -137,7 +137,7 @@ m_htLL_area_time <- glmer(Dead_next ~ HT+log(HT)+AREA+
   family = binomial(link="cloglog"))
 
 #Height, AREA & time since fire, height x area interaction, linear + log ht
-m_htLL_area_htarea_time <- glmer(Dead_next ~ HT+log(HT)+AREA+
+mSurv_htLL_area_htarea_time <- glmmTMB(Dead_next ~ HT+log(HT)+AREA+
   HT:AREA+log(HT):AREA+
   TimeSinceFire+
   offset(log(CensusInterval))+ 
@@ -146,7 +146,7 @@ m_htLL_area_htarea_time <- glmer(Dead_next ~ HT+log(HT)+AREA+
  family = binomial(link="cloglog"))
 
 #Height, AREA & time since fire, log height
-m_htLog_area_time <- glmer(Dead_next ~ log(HT)+AREA+
+mSurv_htLog_area_time <- glmmTMB(Dead_next ~ log(HT)+AREA+
   TimeSinceFire+
   offset(log(CensusInterval))+ 
   (1|SITEAREA)+(1|PLOTCODE)+(1|IND_ID),
@@ -154,7 +154,7 @@ m_htLog_area_time <- glmer(Dead_next ~ log(HT)+AREA+
   family = binomial(link="cloglog"))
 
 #Height, AREA & time since fire, height x area interaction, log ht
-m_htLog_area_htarea_time <- glmer(Dead_next ~ log(HT)*AREA+
+mSurv_htLog_area_htarea_time <- glmmTMB(Dead_next ~ log(HT)*AREA+
   TimeSinceFire+
   offset(log(CensusInterval))+ 
   (1|SITEAREA)+(1|PLOTCODE)+(1|IND_ID),
@@ -162,7 +162,7 @@ m_htLog_area_htarea_time <- glmer(Dead_next ~ log(HT)*AREA+
  family = binomial(link="cloglog"))
 
 #Height, AREA & time since fire, spline for height
-m_htS_area_time <- glmer(Dead_next ~ ns(HT, 3)+AREA+
+mSurv_htS_area_time <- glmmTMB(Dead_next ~ ns(HT, 3)+AREA+
   TimeSinceFire+
   offset(log(CensusInterval))+ 
   (1|SITEAREA)+(1|PLOTCODE)+(1|IND_ID),
@@ -170,7 +170,7 @@ m_htS_area_time <- glmer(Dead_next ~ ns(HT, 3)+AREA+
  family = binomial(link="cloglog"))
 
 #Height, AREA & time since fire, height x area interaction, spline for height
-m_htS_area_htarea_time <- glmer(Dead_next ~ ns(HT, 3)*AREA+
+mSurv_htS_area_htarea_time <- glmmTMB(Dead_next ~ ns(HT, 3)*AREA+
   TimeSinceFire+
   offset(log(CensusInterval))+ 
   (1|SITEAREA)+(1|PLOTCODE)+(1|IND_ID),
@@ -180,20 +180,20 @@ m_htS_area_htarea_time <- glmer(Dead_next ~ ns(HT, 3)*AREA+
 #model diagnostics-------------------------------------------------
 #list of models
 models <- list(
-  m_baseline = m_baseline,
-  m_ht = m_ht,
-  m_ht_area = m_ht_area,
-  m_ht_area_htarea = m_ht_area_htarea,
-  m_ht_area_time = m_ht_area_time,
-  m_ht_area_htarea_time = m_ht_area_htarea_time,
-  m_ht2_area_time = m_ht2_area_time,
-  m_ht2_area_htarea_time = m_ht2_area_htarea_time,
-  m_htLL_area_time = m_htLL_area_time,
-  m_htLL_area_htarea_time = m_htLL_area_htarea_time,
-  m_htLog_area_time = m_htLog_area_time,
-  m_htLog_area_htarea_time = m_htLog_area_htarea_time,
-  m_htS_area_time = m_htS_area_time,
-  m_htS_area_htarea_time = m_htS_area_htarea_time)
+  mSurv_baseline = mSurv_baseline,
+  mSurv_ht = mSurv_ht,
+  mSurv_ht_area = mSurv_ht_area,
+  mSurv_ht_area_htarea = mSurv_ht_area_htarea,
+  mSurv_ht_area_time = mSurv_ht_area_time,
+  mSurv_ht_area_htarea_time = mSurv_ht_area_htarea_time,
+  mSurv_ht2_area_time = mSurv_ht2_area_time,
+  mSurv_ht2_area_htarea_time = mSurv_ht2_area_htarea_time,
+  mSurv_htLL_area_time = mSurv_htLL_area_time,
+  mSurv_htLL_area_htarea_time = mSurv_htLL_area_htarea_time,
+  mSurv_htLog_area_time = mSurv_htLog_area_time,
+  mSurv_htLog_area_htarea_time = mSurv_htLog_area_htarea_time,
+  mSurv_htS_area_time = mSurv_htS_area_time,
+  mSurv_htS_area_htarea_time = mSurv_htS_area_htarea_time)
 
 #checking for singular fit issues, convergence issues,
 #  overdispersion and across-plots variation
@@ -239,19 +239,19 @@ newdat <- expand.grid( #generating new data for plotting
   CensusInterval = 1)
 
 #Plotting shape of curves
-newdat$MortProb_linear <- predict(m_ht_area_htarea_time,
+newdat$MortProb_linear <- predict(mSurv_ht_area_htarea_time,
           newdata = newdat, type = "response", 
         re.form = NA)
-newdat$MortProb_spline <- predict(m_htS_area_htarea_time,
+newdat$MortProb_spline <- predict(mSurv_htS_area_htarea_time,
           newdata = newdat, type = "response", 
         re.form = NA)
-newdat$MortProb_LL <- predict(m_htLL_area_htarea_time,
+newdat$MortProb_LL <- predict(mSurv_htLL_area_htarea_time,
           newdata = newdat, type = "response", 
         re.form = NA)
-newdat$MortProb_Log <- predict(m_htLog_area_htarea_time,
+newdat$MortProb_Log <- predict(mSurv_htLog_area_htarea_time,
           newdata = newdat, type = "response", 
         re.form = NA)
-newdat$MortProb_quad <- predict(m_ht2_area_htarea_time,
+newdat$MortProb_quad <- predict(mSurv_ht2_area_htarea_time,
           newdata = newdat, type = "response", 
         re.form = NA)
 
@@ -338,7 +338,7 @@ logloss <- function(pred, obs){
 #Re-fitting models and testing accuracy
 for(m in names(models)){
   model <- models[[m]]
-  new_model <- glmer(formula = formula(model),
+  new_model <- glmmTMB(formula = formula(model),
     data = TrainDat,
     family = binomial(link="cloglog"))
   preds <- predict(new_model, newdata= TestDat, 
@@ -386,7 +386,7 @@ for( i in 1:folds){
     model <- models[[m]]
     
     #fitting model
-    new_model <- glmer(formula = formula(model),
+    new_model <- glmmTMB(formula = formula(model),
       data = TrainDat,
       family = binomial(link="cloglog"))
     
@@ -425,3 +425,65 @@ model_perform|>
   arrange(mean_LogLoss)
 
 #Model comparison 4: Spatial cross validation------------------------------------------------
+# Comparing models based on predictive accuracy on unseen SITEASREAs
+# with leave-one-site-out (LOSO) cross validation
+#
+# SCC5 is excluded as a holdout target - it's the only SITEAREA in SCC
+# so holding it out would drop that AREA level from
+# training entirely and break prediction for any AREA-containing model.
+
+sites <- setdiff(levels(survival_dat$SITEAREA), "SCC5")
+n_sites <- length(sites)   # 7
+
+# Adding columns for storing spatial CV accuracy scores
+model_perform <- model_perform |>
+  mutate(!!!setNames(rep(list(NA_real_), n_sites*3),
+                      c(paste0("SP", 1:n_sites, "_Brier"),
+                        paste0("SP", 1:n_sites, "_LogLoss"))))
+
+for (i in 1:n_sites) {
+
+  held_out_site <- sites[i]
+
+  # spatial train-test split: hold out one site 
+  TrainDat <- survival_dat |> filter(SITEAREA != held_out_site)
+  TestDat  <- survival_dat |> filter(SITEAREA == held_out_site)
+
+  for (m in names(models)) {
+    model <- models[[m]]
+
+    # refitting model on all sites except the held-out one
+    new_model <- glmmTMB(formula = formula(model),
+                        data = TrainDat,
+                        family = binomial(link = "cloglog"))
+
+    # predicting the held-out data
+    preds <- predict(new_model, newdata = TestDat, type = "response", re.form = NA)
+
+    brier   <- brier_score(preds, TestDat$Dead_next)
+    LL      <- logloss(preds, TestDat$Dead_next)
+
+    # recording results
+    col_brier <- paste0("SP", i, "_Brier")
+    model_perform[which(model_perform$Name == m), col_brier] <- brier
+    col_LL <- paste0("SP", i, "_LogLoss")
+    model_perform[which(model_perform$Name == m), col_LL] <- LL
+
+    # tracking progress
+    print(c(i, held_out_site, m, isSingular(new_model)))
+    print(new_model@optinfo$conv$lme4$messages)
+  }
+}
+
+model_perform |>
+  select(Name, AIC, starts_with("SP") & ends_with("Brier")) |>
+  rowwise() |>
+  mutate(mean_Brier = mean(c_across(starts_with("SP")), na.rm = TRUE)) |>
+  arrange(mean_Brier)
+
+model_perform |>
+  select(Name, AIC, starts_with("SP") & ends_with("LogLoss")) |>
+  rowwise() |>
+  mutate(mean_LogLoss = mean(c_across(starts_with("SP")), na.rm = TRUE)) |>
+  arrange(mean_LogLoss)
+
