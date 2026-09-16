@@ -773,32 +773,104 @@ pines_long|>
 
 #Creating dataframe for survival vs height plotting
 fire_date <- as.Date("06/01/95",format= "%m/%d/%y")
-survival <- pines_long|>
+pines_long <- pines_long|>
+  mutate(TimeSinceFire = 
+           time_length(difftime(START_DATE, fire_date),"years"))
+
+#creating dataframe for survival vs height analysis
+survival_dat <- pines_long|>
+  arrange(IND_ID, CENSUS_NUM)|>
   group_by(IND_ID)|>
-  #pairing survival in census t with survival in census t+1
+  #creating column for death (1 if dead, 0 if alive)
+  mutate(Dead = case_when(STAT == 0 ~ 1L, 
+                    STAT==1 ~ 0L, 
+                  .default = STAT))|>
+  #pairing height & survival in census t with survival in census t+1
   mutate(STAT_next = lead(STAT),
+        Dead_next = lead(Dead),
          CENSUS_next = lead(CENSUS_NUM),
          Date_next = lead(START_DATE))|>
-  #only keeping trees that were alivecensus t
+  #only keeping trees that were alive in census t
   #and had height measurements in census t
-  #and were had their survival recorded in census t+1
+  #and had their survival recorded in census t+1
   filter(STAT==1 & !is.na(STAT_next) & !is.na(HT))|>
   #calculating time interval b/w censuses, in years
   mutate(CensusInterval = 
            time_length(difftime(Date_next, START_DATE),"years"))|>
-  mutate(CensusInterval = round(CensusInterval, digits = 1))|>
-  #calculating time since fire, in years
-  mutate(TimeSinceFire = 
-           time_length(difftime(START_DATE, fire_date),"years"))|>
-  mutate(TimeSinceFire = round(TimeSinceFire, digits = 1))
+  mutate(CensusInterval = round(CensusInterval, digits = 1))
 
-ggplot(survival, aes(HT,STAT_next))+
+ggplot(survival_dat, aes(HT,STAT_next))+
   geom_point()+theme_bw()+
   facet_wrap(~CensusInterval+AREA, scales = "free_x")
-ggplot(survival, aes(HT,STAT_next))+
+ggplot(survival_dat, aes(HT,STAT_next))+
   geom_point()+theme_bw()+
   facet_wrap(~CensusInterval+TimeSinceFire, scales = "free_x")
 
+#Exploratory model of height vs mortality~~~~~~~~~~~~~~~~~~~
+# fitting a model with binned height 
+# to explore shape of height vs survival relationship
+
+#creating height bins
+survival_dat$HT_bin <- cut(survival_dat$HT,
+   breaks = quantile(survival_dat$HT, 
+    probs = seq(0,1,0.05), na.rm=TRUE), include.lowest = TRUE)
+
+#checking sample size in each bin
+survival_dat|>
+  ungroup()|>
+  count(HT_bin) #>500 points in each bin, i.e. sufficient sample size
+
+#fitting model on binned height
+m_ht_bins <- glmer(Dead_next ~ HT_bin + AREA + TimeSinceFire +
+  offset(log(CensusInterval)) +
+  (1|SITEAREA)+(1|PLOTCODE)+(1|IND_ID),
+  data = survival_dat, family = binomial(link="cloglog"))
+
+#extracting coefficients for plotting
+coefs <- tidy(m_ht_bins, 
+  effects = "fixed", conf.int = TRUE)
+coefs <- coefs |> filter(str_detect(term, "^HT_bin"))
+coefs <- coefs |>
+  rename(cloglog_est = estimate, 
+    cloglog_lo = conf.low, 
+    cloglog_hi = conf.high)
+
+#extracting intercept
+intercept <- tidy(m_ht_bins, effects = "fixed") |>
+  filter(term == "(Intercept)") |> pull(estimate)
+
+#setting the first bin as reference
+ref_bin <- levels(survival_dat$HT_bin)[1]
+coefs <- bind_rows(
+  tibble(term = paste0("HT_bin", ref_bin), 
+  cloglog_est = 0, cloglog_lo = NA, cloglog_hi = NA),
+  coefs)
+
+#extracting mid point of each bin
+bin_levels <- levels(survival_dat$HT_bin)
+bin_bounds <- bin_levels |>
+  # parsing the (a,b] interval labels into numeric midpoints
+  str_remove_all("\\[|\\]|\\(|\\)") |>
+  str_split(",", simplify = TRUE) |>
+  apply(2, as.numeric)
+
+bin_midpoints <- tibble(
+  term = paste0("HT_bin", bin_levels),
+  midpoint = rowMeans(bin_bounds)
+)
+
+coefs <- coefs |> left_join(bin_midpoints, by = "term")
+
+#Plotting
+ggplot(coefs, aes(x = midpoint, y = cloglog_est)) +
+  geom_point(size = 2) +
+  geom_errorbar(aes(ymin = cloglog_lo,
+     ymax = cloglog_hi), width = 0) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey50") +
+  labs(x = "Height (cm), bin midpoint",
+       y = "CLog-log hazard relative to reference bin",
+       title = "Nonparametric mortality-hazard shape by height bin") +
+  theme_bw()
 
 #Vital rates trial: growth----------------------------------------------
 #Calculating growth increment

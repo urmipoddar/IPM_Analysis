@@ -67,72 +67,6 @@ table(survival_dat$CENSUS_next - survival_dat$CENSUS_NUM) #everything is correct
 #checking values of census interval
 table(survival_dat$CensusInterval) #looks correct
 
-#Exploratory model---------------------------------------
-# fitting a model with binned height 
-# to explore shape of height vs survival relationship
-
-#creating height bins
-survival_dat$HT_bin <- cut(survival_dat$HT,
-   breaks = quantile(survival_dat$HT, 
-    probs = seq(0,1,0.05), na.rm=TRUE), include.lowest = TRUE)
-
-#checking sample size in each bin
-survival_dat|>
-  ungroup()|>
-  count(HT_bin) #>500 points in each bin, i.e. sufficient sample size
-
-#fitting model on binned height
-m_ht_bins <- glmer(Dead_next ~ HT_bin + AREA + TimeSinceFire +
-  offset(log(CensusInterval)) +
-  (1|SITEAREA)+(1|PLOTCODE)+(1|IND_ID),
-  data = survival_dat, family = binomial(link="cloglog"))
-
-#extracting coefficients for plotting
-coefs <- tidy(m_ht_bins, 
-  effects = "fixed", conf.int = TRUE)
-coefs <- coefs |> filter(str_detect(term, "^HT_bin"))
-coefs <- coefs |>
-  rename(cloglog_est = estimate, 
-    cloglog_lo = conf.low, 
-    cloglog_hi = conf.high)
-
-#extracting intercept
-intercept <- tidy(m_ht_bins, effects = "fixed") |>
-  filter(term == "(Intercept)") |> pull(estimate)
-
-#setting the first bin as reference
-ref_bin <- levels(survival_dat$HT_bin)[1]
-coefs <- bind_rows(
-  tibble(term = paste0("HT_bin", ref_bin), 
-  cloglog_est = 0, cloglog_lo = NA, cloglog_hi = NA),
-  coefs)
-
-#extracting mid point of each bin
-bin_levels <- levels(survival_dat$HT_bin)
-bin_bounds <- bin_levels |>
-  # parsing the (a,b] interval labels into numeric midpoints
-  str_remove_all("\\[|\\]|\\(|\\)") |>
-  str_split(",", simplify = TRUE) |>
-  apply(2, as.numeric)
-
-bin_midpoints <- tibble(
-  term = paste0("HT_bin", bin_levels),
-  midpoint = rowMeans(bin_bounds)
-)
-
-coefs <- coefs |> left_join(bin_midpoints, by = "term")
-
-#Plotting
-ggplot(coefs, aes(x = midpoint, y = cloglog_est)) +
-  geom_point(size = 2) +
-  geom_errorbar(aes(ymin = cloglog_lo,
-     ymax = cloglog_hi), width = 0) +
-  geom_hline(yintercept = 0, linetype = "dashed", color = "grey50") +
-  labs(x = "Height (cm), bin midpoint",
-       y = "CLog-log hazard relative to reference bin",
-       title = "Nonparametric mortality-hazard shape by height bin") +
-  theme_bw()
-
 #Fitting models----------------------------------------------------
 #Baseline model - random effects and time offset only
 m_baseline <- glmer(Dead_next ~ 
@@ -425,10 +359,10 @@ model_perform|>
 # Comparing models based on predictive accuracy on unseen data
 # with 3 fold expanding window time-series cross validation (TSV)
 
-#Adding columns for storing CV ccuracy scores
+#Adding columns for storing TSV ccuracy scores
 model_perform <- model_perform|>
-  mutate(CV1_Brier = NA, CV2_Brier = NA, CV3_Brier =NA,
-  CV1_LogLoss = NA, CV2_LogLoss = NA, CV3_LogLoss =NA)
+  mutate(TSV1_Brier = NA, TSV2_Brier = NA, TSV3_Brier =NA,
+  TSV1_LogLoss = NA, TSV2_LogLoss = NA, TSV3_LogLoss =NA)
 
 folds <- 3 #number of cross-validation folds
 min_training_size <- 8 #minimum number of censuses in training data
@@ -467,9 +401,9 @@ for( i in 1:folds){
       logloss(preds, TestDat$Dead_next)
     
     #recording results
-    col_brier <- paste0("CV", i, "_Brier")
+    col_brier <- paste0("TSV", i, "_Brier")
     model_perform[which(model_perform$Name==m), col_brier] <- brier
-    col_LL <- paste0("CV", i, "_LogLoss")
+    col_LL <- paste0("TSV", i, "_LogLoss")
     model_perform[which(model_perform$Name==m), col_LL] <- LL
 
     #tracking progress
@@ -479,14 +413,15 @@ for( i in 1:folds){
 }
 
 model_perform|>
-  select(Name, AIC, starts_with("CV") & ends_with("Brier"))|>
+  select(Name, AIC, starts_with("TSV") & ends_with("Brier"))|>
   rowwise()|>
-  mutate(mean_Brier = mean(c_across(starts_with("CV"))))|>
+  mutate(mean_Brier = mean(c_across(starts_with("TSV"))))|>
   arrange(mean_Brier)
 
 model_perform|>
-  select(Name, AIC, starts_with("CV") & ends_with("LogLoss"))|>
+  select(Name, AIC, starts_with("TSV") & ends_with("LogLoss"))|>
   rowwise()|>
-  mutate(mean_LogLoss = mean(c_across(starts_with("CV"))))|>
+  mutate(mean_LogLoss = mean(c_across(starts_with("TSV"))))|>
   arrange(mean_LogLoss)
 
+#Model comparison 4: Spatial cross validation------------------------------------------------
