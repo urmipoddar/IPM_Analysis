@@ -822,7 +822,7 @@ growth = pines_long|>
   mutate(deltaHT_annual = deltaHT/CensusInterval)|>
   mutate(HT_next_annual = HT+deltaHT_annual)
 
-#Regression of  height in year t vs height in year t+1
+#Regression of height in year t vs height in year t+1
 m_ht_annual = lm(HT_next_annual~0+HT, data = growth)
 #Plotting height in year t vs height in year t+1
 plot(growth$HT, growth$HT_next_annual, 
@@ -841,6 +841,18 @@ plot(growth$HT, growth$deltaHT_annual,
      bg =alpha("grey", 0.2),
      col = alpha("black", 0.5))
 lines(growth$HT, predict(m_incr_annual), col ="blue", lwd = 1)
+
+
+#Regression of log height in year t vs log ht in year t+1
+m_ht_log = lm(log(HT_next_annual)~log(HT), data = growth)
+#Plotting height in year t vs annual growth increment
+plot(log(growth$HT), log(growth$HT_next_annual), 
+     xlab = "Log height in year t (cm)",
+     ylab ="Log height in year t+1 (cm)", pch = 21, 
+     bg =alpha("grey", 0.2),
+     col = alpha("black", 0.5))
+lines(log(growth$HT), 
+    predict(m_ht_log), col ="blue", lwd = 1)
 
 #Plots separated by area (population type)
 growth|>
