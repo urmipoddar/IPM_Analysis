@@ -15,7 +15,16 @@ library(broom.mixed)
 
 pines_long <- read.csv("Data/pine_demography_cleaned_long.csv")
 plot_info <- read.csv("Data/plot_information.csv")
+#Functions---------------------------------------------------
+#Redefining functions for brier score and logloss
+brier_score <- function(pred, obs){
+  return(mean((obs - pred)^2))}
 
+logloss <- function(pred, obs){
+  eps <-   1e-15
+  pred <- pmin(pmax(pred, eps), 1 - eps)
+  return(-mean(obs * log(pred) +
+      (1 - obs) * log(1 - pred)))}
 #Data formatting---------------------------------------------------
 #adding plot information
 plot_info <- plot_info|>
@@ -71,28 +80,28 @@ table(survival_dat$CensusInterval) #looks correct
 #Baseline model - random effects and time offset only
 mSurv_baseline <- glmmTMB(Dead_next ~ 
   offset(log(CensusInterval))+
-  (1|SITEAREA)+(1|PLOTCODE)+(1|IND_ID),
+  (1|SITEAREA)+(1|IND_ID),
   data = survival_dat,
   family = binomial(link="cloglog"))
 
 #Height only model - linear effect of height
 mSurv_ht <- glmmTMB(Dead_next ~ HT+
   offset(log(CensusInterval))+ 
-  (1|SITEAREA)+(1|PLOTCODE)+(1|IND_ID),
+  (1|SITEAREA)+(1|IND_ID),
   data = survival_dat,
  family = binomial(link="cloglog"))
 
 #Height & AREA
 mSurv_ht_area <- glmmTMB(Dead_next ~ HT+AREA+
   offset(log(CensusInterval))+ 
-  (1|SITEAREA)+(1|PLOTCODE)+(1|IND_ID),
+  (1|SITEAREA)+(1|IND_ID),
   data = survival_dat,
  family = binomial(link="cloglog"))
 
 #Height & AREA - ht x area interaction
 mSurv_ht_area_htarea <- glmmTMB(Dead_next ~ HT*AREA+
   offset(log(CensusInterval))+ 
-  (1|SITEAREA)+(1|PLOTCODE)+(1|IND_ID),
+  (1|SITEAREA)+(1|IND_ID),
   data = survival_dat,
  family = binomial(link="cloglog"))
 
@@ -100,7 +109,7 @@ mSurv_ht_area_htarea <- glmmTMB(Dead_next ~ HT*AREA+
 mSurv_ht_area_time <- glmmTMB(Dead_next ~ 
   HT+AREA+TimeSinceFire+
   offset(log(CensusInterval))+ 
-  (1|SITEAREA)+(1|PLOTCODE)+(1|IND_ID),
+  (1|SITEAREA)+(1|IND_ID),
   data = survival_dat,
  family = binomial(link="cloglog"))
 
@@ -108,23 +117,25 @@ mSurv_ht_area_time <- glmmTMB(Dead_next ~
 mSurv_ht_area_htarea_time <- glmmTMB(Dead_next ~ HT*AREA+
   TimeSinceFire+
   offset(log(CensusInterval))+ 
-  (1|SITEAREA)+(1|PLOTCODE)+(1|IND_ID),
+  (1|SITEAREA)+(1|IND_ID),
   data = survival_dat,
  family = binomial(link="cloglog"))
 
 #Height, AREA & time since fire, quadratic height
-mSurv_ht2_area_time <- glmmTMB(Dead_next ~ poly(HT, 2, raw=T)+AREA+
+mSurv_ht2_area_time <- glmmTMB(Dead_next ~ 
+  HT+ I(HT^2)+AREA+
   TimeSinceFire+
   offset(log(CensusInterval))+ 
-  (1|SITEAREA)+(1|PLOTCODE)+(1|IND_ID),
+  (1|SITEAREA)+(1|IND_ID),
   data = survival_dat,
  family = binomial(link="cloglog"))
 
 #Height, AREA & time since fire, height x area interaction, quadratic ht
-mSurv_ht2_area_htarea_time <- glmmTMB(Dead_next ~ poly(HT, 2, raw=T)*AREA+
+mSurv_ht2_area_htarea_time <- glmmTMB(Dead_next ~ 
+  (HT+ I(HT^2))*AREA+
   TimeSinceFire+
   offset(log(CensusInterval))+ 
-  (1|SITEAREA)+(1|PLOTCODE)+(1|IND_ID),
+  (1|SITEAREA)+(1|IND_ID),
   data = survival_dat,
  family = binomial(link="cloglog"))
 
@@ -132,7 +143,7 @@ mSurv_ht2_area_htarea_time <- glmmTMB(Dead_next ~ poly(HT, 2, raw=T)*AREA+
 mSurv_htLL_area_time <- glmmTMB(Dead_next ~ HT+log(HT)+AREA+
   TimeSinceFire+
   offset(log(CensusInterval))+ 
-  (1|SITEAREA)+(1|PLOTCODE)+(1|IND_ID),
+  (1|SITEAREA)+(1|IND_ID),
   data = survival_dat,
   family = binomial(link="cloglog"))
 
@@ -141,7 +152,7 @@ mSurv_htLL_area_htarea_time <- glmmTMB(Dead_next ~ HT+log(HT)+AREA+
   HT:AREA+log(HT):AREA+
   TimeSinceFire+
   offset(log(CensusInterval))+ 
-  (1|SITEAREA)+(1|PLOTCODE)+(1|IND_ID),
+  (1|SITEAREA)+(1|IND_ID),
   data = survival_dat,
  family = binomial(link="cloglog"))
 
@@ -149,7 +160,7 @@ mSurv_htLL_area_htarea_time <- glmmTMB(Dead_next ~ HT+log(HT)+AREA+
 mSurv_htLog_area_time <- glmmTMB(Dead_next ~ log(HT)+AREA+
   TimeSinceFire+
   offset(log(CensusInterval))+ 
-  (1|SITEAREA)+(1|PLOTCODE)+(1|IND_ID),
+  (1|SITEAREA)+(1|IND_ID),
   data = survival_dat,
   family = binomial(link="cloglog"))
 
@@ -157,7 +168,7 @@ mSurv_htLog_area_time <- glmmTMB(Dead_next ~ log(HT)+AREA+
 mSurv_htLog_area_htarea_time <- glmmTMB(Dead_next ~ log(HT)*AREA+
   TimeSinceFire+
   offset(log(CensusInterval))+ 
-  (1|SITEAREA)+(1|PLOTCODE)+(1|IND_ID),
+  (1|SITEAREA)+(1|IND_ID),
   data = survival_dat,
  family = binomial(link="cloglog"))
 
@@ -165,7 +176,7 @@ mSurv_htLog_area_htarea_time <- glmmTMB(Dead_next ~ log(HT)*AREA+
 mSurv_htS_area_time <- glmmTMB(Dead_next ~ ns(HT, 3)+AREA+
   TimeSinceFire+
   offset(log(CensusInterval))+ 
-  (1|SITEAREA)+(1|PLOTCODE)+(1|IND_ID),
+  (1|SITEAREA)+(1|IND_ID),
   data = survival_dat,
  family = binomial(link="cloglog"))
 
@@ -173,7 +184,7 @@ mSurv_htS_area_time <- glmmTMB(Dead_next ~ ns(HT, 3)+AREA+
 mSurv_htS_area_htarea_time <- glmmTMB(Dead_next ~ ns(HT, 3)*AREA+
   TimeSinceFire+
   offset(log(CensusInterval))+ 
-  (1|SITEAREA)+(1|PLOTCODE)+(1|IND_ID),
+  (1|SITEAREA)+(1|IND_ID),
   data = survival_dat,
  family = binomial(link="cloglog"))
 
@@ -199,13 +210,15 @@ models <- list(
 #  overdispersion and across-plots variation
 model_diagnostics <- tibble::tibble(
   Name = names(models),
-  Singular = sapply(models, isSingular),
+  Singular = check_singularity(models),
   ConvergenceWarnings = sapply(models,
-     \(x) x@optinfo$conv$lme4$messages),
+     \(x) x$fit$convergence),
   DispersionRatio = sapply(models, \(x) 
       check_overdispersion(x)$dispersion_ratio),
-  AcrossPlotVar = sapply(models, \(x) VarCorr(x)$PLOTCODE|>as.numeric()),
-  AcrossIndVar = sapply(models, \(x) VarCorr(x)$IND_ID|>as.numeric()))
+  AcrossPlotVar = sapply(models, \(x) 
+          VarCorr(x)$cond$SITEAREA|>as.numeric()|>sqrt()),
+AcrossIndVar = sapply(models, \(x) 
+          VarCorr(x)$cond$IND_ID|>as.numeric()|>sqrt()))
 model_diagnostics
 
 #plotting DHARMa residuals
@@ -226,10 +239,11 @@ for(m in names(residuals)){
   model_diagnostics$OutlierSig[model_diagnostics$Name==m] <- 
     outlier_test$p.value < 0.05
 }
-View(model_diagnostics) #some models have significant outliers, but their number is small
+View(model_diagnostics) #some models have significant outliers, but their num of outliers is small
 
-#checking the shape of height vs survival curves
-newdat <- expand.grid( #generating new data for plotting
+#Shape of height vs survival curves-----------------------------
+#Generating new data for plotting
+newdat <- expand.grid( 
   HT = seq(
     min(survival_dat$HT, na.rm = TRUE),
     max(survival_dat$HT, na.rm = TRUE),
@@ -238,7 +252,7 @@ newdat <- expand.grid( #generating new data for plotting
   AREA = levels(survival_dat$AREA),
   CensusInterval = 1)
 
-#Plotting shape of curves
+#Generating predictions from different models
 newdat$MortProb_linear <- predict(mSurv_ht_area_htarea_time,
           newdata = newdat, type = "response", 
         re.form = NA)
@@ -255,6 +269,7 @@ newdat$MortProb_quad <- predict(mSurv_ht2_area_htarea_time,
           newdata = newdat, type = "response", 
         re.form = NA)
 
+#Plotting
 ggplot(newdat, aes(HT, MortProb_linear, col=AREA))+
   geom_point()+theme_bw()+xlab("Height")+
   ylab("Predicted Mortality Probability")+
@@ -276,13 +291,13 @@ ggplot(newdat, aes(HT, MortProb_spline, col=AREA))+
   ylab("Predicted Mortality Probability")+
   ggtitle("Spline for height")
 
-
+#Plotting observed data 
 survival_dat|>filter(CENSUS_NUM==11)|>
   ggplot(aes(HT, Dead_next,fill = AREA))+
   geom_point(pch=21, size = 2, alpha =0.5)+theme_bw()+
   facet_wrap(~AREA)
 
-#Model comparisons on full dataset-----------------------------------------
+#Model fit comparisons-----------------------------------------
 # Comparing models based on their fit to training data        
 #comparing AICs
 model_perform <- tibble::tibble(
@@ -291,27 +306,20 @@ model_perform <- tibble::tibble(
 model_perform|>arrange(AIC)
 
 #comparing brier scores
-brier_score_train <- function(model, obs = survival_dat$Dead_next){
-  pred <- predict(model, type="response",re.form = NA)
-  return(mean((obs - pred)^2))
-}
-model_perform$BrierScore <- sapply(models, brier_score_train)
+model_perform$BrierScore <- sapply(models, 
+          function(x){brier_score(
+            predict(x, type="response",re.form = NA),
+            survival_dat$Dead_next)})
 model_perform
 
 #comparing log loss
-logloss_train <- function(model, obs = survival_dat$Dead_next){
-  eps <-   1e-15
-  pred <- predict(model, type="response",re.form = NA)
-  pred <- pmin(pmax(pred, eps), 1 - eps)
-  return(-mean(obs * log(pred) +
-      (1 - obs) * log(1 - pred)))
-}
-
-model_perform$LogLoss <- sapply(models, logloss_train)
+model_perform$LogLoss <- sapply(models, function(x){logloss(
+            predict(x, type="response",re.form = NA),
+            survival_dat$Dead_next)})
 model_perform
 
 
-#Model comparisons 2: time-series test-train split-----------------------------------------        
+#Model accuracy comparisons 1: time-series test-train split-----------------------------------------        
 # Comparing models based on predictive accuracy on unseen data
 
 model_perform$TT_Brier <- NA
@@ -323,17 +331,6 @@ TrainDat <- survival_dat|>
   filter(CENSUS_NUM<=9)
 TestDat <- survival_dat|>
   filter(CENSUS_NUM>9)
-
-#Redefining functions for brier score and logloss
-brier_score <- function(pred, obs){
-  return(mean((obs - pred)^2))}
-
-logloss <- function(pred, obs){
-  eps <-   1e-15
-  pred <- pmin(pmax(pred, eps), 1 - eps)
-  return(-mean(obs * log(pred) +
-      (1 - obs) * log(1 - pred)))}
-
 
 #Re-fitting models and testing accuracy
 for(m in names(models)){
@@ -348,14 +345,14 @@ for(m in names(models)){
   model_perform$TT_LogLoss[model_perform$Name ==m] <-
     logloss(preds, TestDat$Dead_next)
 
-  print(c(m, isSingular(new_model)))
-  print(new_model@optinfo$conv$lme4$messages)
+  print(c(m, check_singularity(new_model)))
+  print(new_model$fit$convergence)
 }
 model_perform|>
   select(Name, AIC,TT_Brier,TT_LogLoss)|>
   arrange(TT_Brier)
 
-#Model comparisons 3: time-series cross-validation-----------------------------------------        
+#Model accuracy comparisons 2: time-series cross-validation-----------------------------------------        
 # Comparing models based on predictive accuracy on unseen data
 # with 3 fold expanding window time-series cross validation (TSV)
 
@@ -405,10 +402,10 @@ for( i in 1:folds){
     model_perform[which(model_perform$Name==m), col_brier] <- brier
     col_LL <- paste0("TSV", i, "_LogLoss")
     model_perform[which(model_perform$Name==m), col_LL] <- LL
-
-    #tracking progress
-    print(c(i, m, isSingular(new_model)))
-    print(new_model@optinfo$conv$lme4$messages)
+    
+    # tracking progress
+    print(c(i,  m, check_singularity(new_model)))
+    print(model$fit$convergence)
   }
 }
 
@@ -424,7 +421,7 @@ model_perform|>
   mutate(mean_LogLoss = mean(c_across(starts_with("TSV"))))|>
   arrange(mean_LogLoss)
 
-#Model comparison 4: Spatial cross validation------------------------------------------------
+#Model accuracy comparison 3: Spatial cross validation------------------------------------------------
 # Comparing models based on predictive accuracy on unseen SITEASREAs
 # with leave-one-site-out (LOSO) cross validation
 #
@@ -470,8 +467,8 @@ for (i in 1:n_sites) {
     model_perform[which(model_perform$Name == m), col_LL] <- LL
 
     # tracking progress
-    print(c(i, held_out_site, m, isSingular(new_model)))
-    print(new_model@optinfo$conv$lme4$messages)
+    print(c(i, held_out_site, m, check_singularity(new_model)))
+    print(model$fit$convergence)
   }
 }
 
