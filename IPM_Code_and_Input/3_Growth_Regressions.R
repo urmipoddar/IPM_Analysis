@@ -7,8 +7,8 @@
 ## ************************************************************************** ##
 #Loading data and packages-----------------------------------------
 library(tidyverse)
-library(lme4)
-library(lmerTest)
+library(glmmTMB)
+library(gamlss)
 library(performance)
 library(splines)
 library(DHARMa)
@@ -16,7 +16,16 @@ library(DHARMa)
 pines_long <- read.csv("Data/pine_demography_cleaned_long.csv")
 plot_info <- read.csv("Data/plot_information.csv")
 
+#Functions--------------------------------------------------
+#Mean Squared Error
+mse <- function(pred, obs){
+  mean((obs-pred)^2)
+}
 
+#Mean absolute error
+mae <- function(pred, obs){
+  mean(abs(obs-pred))
+}
 #Data formatting---------------------------------------------------
 #adding plot information
 plot_info <- plot_info|>
@@ -42,6 +51,10 @@ pines_long <- pines_long|>
 
 #Creating dataframe for growth analysis
 growth_dat <- pines_long|>
+  #removing unnessary columns
+  select(AREA, SITEAREA, PLOTCODE, 
+    CENSUS_NUM ,IND_ID, START_DATE, 
+    TimeSinceFire, STAT, HT)|>
   group_by(IND_ID)|>
   #keeping only those censuses where height was measured
   filter(CENSUS_NUM %in% c(3, 5, 7, 9, 11:15))|>
@@ -56,7 +69,8 @@ growth_dat <- pines_long|>
   filter(!is.na(HT) & !is.na(HT_next))|>
   #calculating growth increment
   mutate(deltaHT = HT_next - HT,   
-    CensusInterval =year(Date_next)-year(START_DATE))|>
+    CensusInterval = 
+      time_length(difftime(Date_next, START_DATE), "years"))|>
   #calculating annual growth increment &
   #and linearly interpolating height to annual timescales
   mutate(deltaHT_annual = deltaHT/CensusInterval)|>
@@ -71,93 +85,132 @@ unique(growth_dat[,c("CENSUS_NUM", "CENSUS_next",
        "CensusInterval", "START_DATE",
         "Date_next")]) #looks correct
 
-#Fitting models-----------------------------------
-#Baseline model - random effects only
-m_baseline <- lmer(deltaHT_annual ~ 
-  (1|PLOTCODE)+(1|IND_ID), data = growth_dat)
+#Fitting models 1: Linear models-----------------------------------
+# Based on prelim analysis, all models are fitted on log(HT_next)
+# With log height as the predictor
 
-#Height only model - linear effect of height
-m_ht <- lmer(deltaHT_annual ~ HT+
-  (1|PLOTCODE)+(1|IND_ID), data = growth_dat)
+#Baseline model - random effects & census interval only
+mGrwt_baseline <- glmmTMB(log(HT_next) ~ CensusInterval+
+  (1|PLOTCODE)+(1|IND_ID),
+  family = t_family(), 
+  data = growth_dat)
+
+#Height only model - log linear effect of height
+mGrwt_ht <- glmmTMB(log(HT_next) ~ log(HT)+ CensusInterval+
+   (1|PLOTCODE)+(1|IND_ID), data = growth_dat,
+  family = t_family(),
+  dispformula = ~ log(HT))
 
 #Height & AREA
-m_ht_area <- lmer(deltaHT_annual ~ HT+AREA+
-  (1|PLOTCODE)+(1|IND_ID), data = growth_dat)
+mGrwt_ht_area <- glmmTMB(log(HT_next) ~ 
+  log(HT)+AREA+ CensusInterval+
+  (1|PLOTCODE)+(1|IND_ID), data = growth_dat,
+    family = t_family(),
+  dispformula = ~ log(HT))
+
+#Height + AREA with quadratic height
+mGrwt_ht2_area <- glmmTMB(log(HT_next) ~ 
+  poly(log(HT),2)+AREA+ CensusInterval+
+  (1|PLOTCODE)+(1|IND_ID), data = growth_dat,
+    family = t_family(),
+  dispformula = ~ log(HT))
 
 #Height & AREA - ht x area interaction
-m_ht_area_htarea <- lmer(deltaHT_annual ~ HT*AREA+
-  (1|PLOTCODE)+(1|IND_ID), data = growth_dat)
+mGrwt_ht_area_htarea <- glmmTMB(log(HT_next) ~ 
+  log(HT)*AREA+ CensusInterval+
+  (1|PLOTCODE)+(1|IND_ID), data = growth_dat,
+    family = t_family(),
+  dispformula = ~ log(HT))
+
+#Height & AREA - ht x area interaction, quadratic height
+mGrwt_ht2_area_htarea <- glmmTMB(log(HT_next) ~ 
+  poly(log(HT),2)*AREA+ CensusInterval+
+  (1|PLOTCODE)+(1|IND_ID), 
+  data = growth_dat,
+    family = t_family(),
+  dispformula = ~ log(HT))
 
 #Height, AREA & time since fire
-m_ht_area_time <- lmer(deltaHT_annual ~ 
-  HT+AREA+TimeSinceFire+
-  (1|PLOTCODE)+(1|IND_ID), data = growth_dat)
-
-#Height, AREA & time since fire, height x area interaction
-m_ht_area_htarea_time <- lmer(deltaHT_annual ~ HT*AREA+
-  TimeSinceFire+
-  (1|PLOTCODE)+(1|IND_ID), data = growth_dat)
-
-#Height, AREA & time since fire, linear + log height
-m_htLL_area_time <- lmer(deltaHT_annual ~ 
-  HT+log(HT)+AREA+TimeSinceFire+
-  (1|PLOTCODE)+(1|IND_ID), data = growth_dat)
-
-#Height, AREA & time since fire, height x area interaction, linear + log HT
-m_htLL_area_htarea_time <- lmer(deltaHT_annual ~ 
-  HT+log(HT)+AREA+HT:AREA + log(HT)*AREA+
-  TimeSinceFire+
-  (1|PLOTCODE)+(1|IND_ID), data = growth_dat)
-
-#Height, AREA, height x area interaction, linear + log HT
-m_htLL_area_htarea <- lmer(deltaHT_annual ~ 
-  HT+log(HT)+AREA+HT:AREA + log(HT)*AREA+
-  (1|PLOTCODE)+(1|IND_ID), data = growth_dat)
+mGrwt_ht_area_time <- glmmTMB(log(HT_next) ~ 
+  log(HT)+AREA + TimeSinceFire + CensusInterval+
+  (1|PLOTCODE)+(1|IND_ID), data = growth_dat,
+    family = t_family(),
+  dispformula = ~ log(HT))
 
 #Height, AREA & time since fire, quadratic height
-m_ht2_area_time <- lmer(deltaHT_annual ~ 
-  poly(HT, 2, raw=T)+AREA+TimeSinceFire+
-  (1|PLOTCODE)+(1|IND_ID), data = growth_dat)
+# mGrwt_ht2_area_time <- glmmTMB(log(HT_next) ~ 
+#   poly(log(HT),2)+AREA + TimeSinceFire + CensusInterval+
+#   (1|PLOTCODE)+(1|IND_ID), data = growth_dat,
+#     family = t_family(),
+#   dispformula = ~ log(HT))
+
+#Height, AREA & time since fire, height x area interaction
+mGrwt_ht_area_htarea_time <- glmmTMB(log(HT_next) ~ 
+  log(HT)*AREA + TimeSinceFire + CensusInterval+
+  (1|PLOTCODE)+(1|IND_ID), data = growth_dat,
+    family = t_family(),
+  dispformula = ~ log(HT))
 
 #Height, AREA & time since fire, height x area interaction, quadratic ht
-m_ht2_area_htarea_time <- lmer(deltaHT_annual ~ 
-  poly(HT, 2, raw=T)*AREA+TimeSinceFire+
-  (1|PLOTCODE)+(1|IND_ID), data = growth_dat)
+mGrwt_ht2_area_htarea_time <- glmmTMB(log(HT_next) ~ 
+  poly(log(HT),2)*AREA + TimeSinceFire + CensusInterval+
+  (1|PLOTCODE)+(1|IND_ID), data = growth_dat,
+    family = t_family(),
+  dispformula = ~ log(HT))
 
-#Height, AREA,  height x area interaction, quadratic HT
-m_ht2_area_htarea <- lmer(deltaHT_annual ~ 
-  poly(HT, 2, raw=T)*AREA+
-  (1|PLOTCODE)+(1|IND_ID), data = growth_dat)
+  mGrwt_ht2_area_htarea_time_normalres <- glmmTMB(log(HT_next) ~ 
+  poly(log(HT),2)*AREA + TimeSinceFire + CensusInterval+
+  (1|PLOTCODE)+(1|IND_ID), data = growth_dat,
+  dispformula = ~ log(HT))
+
+m_skewt <- gamlss(
+  log(HT_next) ~ poly(log(HT), 2) * AREA + 
+    TimeSinceFire + CensusInterval  + 
+    random(PLOTCODE) + random(IND_ID),
+  sigma.formula = ~ log(HT),
+  nu.formula = ~ 1,     
+  family = ST3,
+  data = growth_dat)
+
+m_skewt3 <- gamlss(
+  log(HT_next) ~ poly(log(HT), 2) * AREA + TimeSinceFire + CensusInterval +
+    random(SITEAREA) + random(PLOTCODE) + random(IND_ID),
+  sigma.formula = ~ log(HT) + I(log(HT)^2),
+  nu.formula = ~ log(HT),
+  tau.formula = ~ log(HT),
+  family = ST3,
+  data = growth_dat)
 
 #model diagnostics-------------------------------------------------
 #list of models
 models <- list(
-  m_baseline = m_baseline,
-  m_ht = m_ht,
-  m_ht_area = m_ht_area,
-  m_ht_area_htarea = m_ht_area_htarea,
-  m_ht_area_time = m_ht_area_time,
-  m_ht_area_htarea_time = m_ht_area_htarea_time,
-  m_ht2_area_time = m_ht2_area_time,
-  m_ht2_area_htarea = m_ht2_area_htarea, 
-  m_ht2_area_htarea_time = m_ht2_area_htarea_time,
-  m_htLL_area_time = m_htLL_area_time,
-  m_htLL_area_htarea =m_htLL_area_htarea, 
-  m_htLL_area_htarea_time = m_htLL_area_htarea_time)
+  mGrwt_baseline = mGrwt_baseline,
+  mGrwt_ht = mGrwt_ht,
+  mGrwt_ht_area = mGrwt_ht_area,
+  Grwt_ht2_area = mGrwt_ht2_area,
+  mGrwt_ht_area_htarea = mGrwt_ht_area_htarea,
+  Grwt_ht2_area_htarea = mGrwt_ht2_area_htarea,
+  mGrwt_ht_area_time = mGrwt_ht_area_time,
+  #mGrwt_ht2_area_time = mGrwt_ht2_area_time,
+  mGrwt_ht_area_htarea_time = mGrwt_ht_area_htarea_time,
+  mGrwt_ht2_area_htarea_time = mGrwt_ht2_area_htarea_time,
+  #m_skewt = m_skewt,
+  mGrwt_ht2_area_htarea_time_normalres = 
+  mGrwt_ht2_area_htarea_time_normalres)
 
 #checking for singular fit issues, convergence issues,
 #  overdispersion and across-plots variation
 model_diagnostics <- tibble::tibble(
   Name = names(models),
-  Singular = sapply(models, isSingular),
+  Singular = check_singularity(models),
   ConvergenceWarnings = sapply(models,
-     \(x) x@optinfo$conv$lme4$messages),
+     \(x) x$fit$convergence),
   DispersionRatio = sapply(models, \(x) 
       check_overdispersion(x)$dispersion_ratio),
   AcrossPlotVar = sapply(models, \(x) 
-          VarCorr(x)$PLOTCODE|>as.numeric()),
+          VarCorr(x)$cond$PLOTCODE|>as.numeric()|>sqrt()),
 AcrossIndVar = sapply(models, \(x) 
-          VarCorr(x)$IND_ID|>as.numeric()))
+          VarCorr(x)$cond$IND_ID|>as.numeric()|>sqrt()))
 model_diagnostics
 
 #QQ-plots
@@ -179,52 +232,74 @@ for (m in names(res)) {
   dev.new()
 }
 
-#checking the shape of height vs height increment curves
-newdat <- expand.grid( #generating new data for plotting
+#checking shapes of predicted curves----------------------------
+#Building newdat grid with ALL predictors
+newdat <- expand.grid(
   HT = seq(
     min(growth_dat$HT, na.rm = TRUE),
     max(growth_dat$HT, na.rm = TRUE),
     length.out = 1000),
-  AREA = levels(growth_dat$AREA))
+  AREA = levels(growth_dat$AREA),
+  CensusInterval = 1,
+  TimeSinceFire = mean(growth_dat$TimeSinceFire, na.rm = TRUE))
 
-#Plotting shape of curves
-newdat$PredLinear <- predict(m_ht_area_htarea,
-          newdata = newdat, type = "response", 
-        re.form = NA)
-newdat$PredLL <- predict(m_htLL_area_htarea,
-          newdata = newdat, type = "response", 
-        re.form = NA)
-newdat$PredQuad <- predict(m_ht2_area_htarea,
-          newdata = newdat, type = "response", 
-        re.form = NA)
+# Predictions on the log scale
+newdat$PredLinear <- predict(
+  mGrwt_ht_area_htarea,
+  newdata = newdat,
+  type = "response",
+  re.form = NA)
+newdat$PredQuad <- predict(
+  mGrwt_ht2_area_htarea,
+  newdata = newdat,
+  type = "response",
+  re.form = NA)
 
-ggplot(newdat, aes(HT, PredLinear, col=AREA))+
-  geom_line()+theme_bw()+xlab("Height")+
-  ylab("Predicted Growth Increment")+
-  ggtitle("Linear effect of height")
-ggplot(newdat, aes(HT, PredLL, col=AREA))+
-  geom_line()+theme_bw()+xlab("Height")+
-  ylab("Predicted Growth Increment")+
-  ggtitle("Linear + log effect of height")
-ggplot(newdat, aes(HT, PredQuad, col=AREA))+
-  geom_line()+theme_bw()+xlab("Height")+
-  ylab("Predicted Growth Increment")+
-  ggtitle("quadratic effect of height")
+#Predictions on the raw scale - linear model
+mu_marginal_linear <- predict(
+  mGrwt_ht_area_htarea, 
+  newdata = growth_dat,
+  type = "response", 
+  re.form = NA)
+total_resid_linear <- log(growth_dat$HT_next) - mu_marginal_linear   # captures RE variance + residual + any skew
+smear_factor <- mean(exp(total_resid_linear))
+newdat$PredLinear_corrected <- 
+      exp(newdat$PredLinear)*smear_factor
 
-ggplot(growth_dat, aes(HT, deltaHT_annual, fill = AREA))+
+# Compute Duan's smearing factor from the QUADRATIC model's
+# own marginal residuals (not the linear model's)
+mu_marginal_quad <- predict(
+  mGrwt_ht2_area_htarea,
+  newdata = growth_dat,
+  type = "response",
+  re.form = NA)
+total_resid_quad <- log(growth_dat$HT_next) - mu_marginal_quad
+smear_factor_quad <- mean(exp(total_resid_quad))
+newdat$PredQuad_corrected <- exp(newdat$PredQuad) * smear_factor_quad
+
+
+#Log-scale plots
+ggplot(growth_dat, aes(log(HT), log(HT_next), fill = AREA))+
   geom_point(pch = 21, col = "white", alpha = 0.6)+
-   geom_line(data = newdat, aes(HT, PredQuad))+
+   geom_line(data = newdat, aes(log(HT), (PredLinear)))+
+  theme_bw()+facet_wrap(vars(AREA))+ggtitle("Linear")
+ggplot(growth_dat, aes(log(HT), log(HT_next), fill = AREA))+
+  geom_point(pch = 21, col = "white", alpha = 0.6)+
+   geom_line(data = newdat, aes(log(HT), (PredQuad)))+
   theme_bw()+facet_wrap(vars(AREA))+ggtitle("Quadratic")
 
-ggplot(growth_dat, aes(HT, deltaHT_annual, fill = AREA))+
+#Raw scale plots
+ggplot(growth_dat, aes((HT), (HT_next), fill = AREA))+
   geom_point(pch = 21, col = "white", alpha = 0.6)+
-   geom_line(data = newdat, aes(HT, PredLinear))+
+  geom_line(data = newdat, aes((HT), 
+     PredLinear_corrected))+
   theme_bw()+facet_wrap(vars(AREA))+ggtitle("Linear")
 
-ggplot(growth_dat, aes(HT, deltaHT_annual, fill = AREA))+
+ggplot(growth_dat, aes((HT), (HT_next), fill = AREA))+
   geom_point(pch = 21, col = "white", alpha = 0.6)+
-   geom_line(data = newdat, aes(HT, PredLL))+
-  theme_bw()+facet_wrap(vars(AREA))+ggtitle("Linear+Log")
+  geom_line(data = newdat, aes((HT), 
+     PredQuad_corrected))+
+  theme_bw()+facet_wrap(vars(AREA))+ggtitle("Quadratic")
 #Model comparisons on full dataset-----------------------------------------
 # Comparing models based on their fit to training data        
 #comparing AICs
@@ -233,13 +308,10 @@ model_perform <- tibble::tibble(
   AIC = sapply(models, AIC))
 model_perform|>arrange(AIC)
 
-#comparing mean squared error (MSE)
-mse <- function(pred, obs){
-  mean((obs-pred)^2)
-}
-
 model_perform$MSE <- sapply(models,
-   function(x){mse(predict(x, re.form = NA),growth_dat$deltaHT_annual )})
+   function(x){mse(predict(x, re.form = NA),
+     log(growth_dat$HT_next))})
 model_perform|>
-  mutate(MSE_by_var = MSE/var(growth_dat$deltaHT_annual))|>
+  mutate(MSE_by_var = 
+    1-MSE/var(log(growth_dat$HT_next)))|>
   arrange(MSE)
