@@ -91,41 +91,41 @@ unique(growth_dat[,c("CENSUS_NUM", "CENSUS_next",
 
 #Baseline model - random effects & census interval only
 mGrwt_baseline <- glmmTMB(log(HT_next) ~ CensusInterval+
-  (1|PLOTCODE)+(1|IND_ID),
+  (1|SITEAREA)+(1|IND_ID),
   family = t_family(), 
   data = growth_dat)
 
 #Height only model - log linear effect of height
 mGrwt_ht <- glmmTMB(log(HT_next) ~ log(HT)+ CensusInterval+
-   (1|PLOTCODE)+(1|IND_ID), data = growth_dat,
+   (1|SITEAREA)+(1|IND_ID), data = growth_dat,
   family = t_family(),
   dispformula = ~ log(HT))
 
 #Height & AREA
 mGrwt_ht_area <- glmmTMB(log(HT_next) ~ 
   log(HT)+AREA+ CensusInterval+
-  (1|PLOTCODE)+(1|IND_ID), data = growth_dat,
+  (1|SITEAREA)+(1|IND_ID), data = growth_dat,
     family = t_family(),
   dispformula = ~ log(HT))
 
 #Height + AREA with quadratic height
 mGrwt_ht2_area <- glmmTMB(log(HT_next) ~ 
   poly(log(HT),2)+AREA+ CensusInterval+
-  (1|PLOTCODE)+(1|IND_ID), data = growth_dat,
+  (1|SITEAREA)+(1|IND_ID), data = growth_dat,
     family = t_family(),
   dispformula = ~ log(HT))
 
 #Height & AREA - ht x area interaction
 mGrwt_ht_area_htarea <- glmmTMB(log(HT_next) ~ 
   log(HT)*AREA+ CensusInterval+
-  (1|PLOTCODE)+(1|IND_ID), data = growth_dat,
+  (1|SITEAREA)+(1|IND_ID), data = growth_dat,
     family = t_family(),
   dispformula = ~ log(HT))
 
 #Height & AREA - ht x area interaction, quadratic height
 mGrwt_ht2_area_htarea <- glmmTMB(log(HT_next) ~ 
   poly(log(HT),2)*AREA+ CensusInterval+
-  (1|PLOTCODE)+(1|IND_ID), 
+  (1|SITEAREA)+(1|IND_ID), 
   data = growth_dat,
     family = t_family(),
   dispformula = ~ log(HT))
@@ -133,34 +133,34 @@ mGrwt_ht2_area_htarea <- glmmTMB(log(HT_next) ~
 #Height, AREA & time since fire
 mGrwt_ht_area_time <- glmmTMB(log(HT_next) ~ 
   log(HT)+AREA + TimeSinceFire + CensusInterval+
-  (1|PLOTCODE)+(1|IND_ID), data = growth_dat,
+  (1|SITEAREA)+(1|IND_ID), data = growth_dat,
     family = t_family(),
   dispformula = ~ log(HT))
 
 #Height, AREA & time since fire, quadratic height
 # mGrwt_ht2_area_time <- glmmTMB(log(HT_next) ~ 
 #   poly(log(HT),2)+AREA + TimeSinceFire + CensusInterval+
-#   (1|PLOTCODE)+(1|IND_ID), data = growth_dat,
+#   (1|SITEAREA)+(1|IND_ID), data = growth_dat,
 #     family = t_family(),
 #   dispformula = ~ log(HT))
 
 #Height, AREA & time since fire, height x area interaction
 mGrwt_ht_area_htarea_time <- glmmTMB(log(HT_next) ~ 
   log(HT)*AREA + TimeSinceFire + CensusInterval+
-  (1|PLOTCODE)+(1|IND_ID), data = growth_dat,
+  (1|SITEAREA)+(1|IND_ID), data = growth_dat,
     family = t_family(),
   dispformula = ~ log(HT))
 
 #Height, AREA & time since fire, height x area interaction, quadratic ht
 mGrwt_ht2_area_htarea_time <- glmmTMB(log(HT_next) ~ 
   poly(log(HT),2)*AREA + TimeSinceFire + CensusInterval+
-  (1|PLOTCODE)+(1|IND_ID), data = growth_dat,
+  (1|SITEAREA)+(1|IND_ID), data = growth_dat,
     family = t_family(),
   dispformula = ~ log(HT))
 
   mGrwt_ht2_area_htarea_time_normalres <- glmmTMB(log(HT_next) ~ 
   poly(log(HT),2)*AREA + TimeSinceFire + CensusInterval+
-  (1|PLOTCODE)+(1|IND_ID), data = growth_dat,
+  (1|SITEAREA)+(1|IND_ID), data = growth_dat,
   dispformula = ~ log(HT))
 
 m_skewt <- gamlss(
@@ -208,7 +208,7 @@ model_diagnostics <- tibble::tibble(
   DispersionRatio = sapply(models, \(x) 
       check_overdispersion(x)$dispersion_ratio),
   AcrossPlotVar = sapply(models, \(x) 
-          VarCorr(x)$cond$PLOTCODE|>as.numeric()|>sqrt()),
+          VarCorr(x)$cond$SITEAREA|>as.numeric()|>sqrt()),
 AcrossIndVar = sapply(models, \(x) 
           VarCorr(x)$cond$IND_ID|>as.numeric()|>sqrt()))
 model_diagnostics
