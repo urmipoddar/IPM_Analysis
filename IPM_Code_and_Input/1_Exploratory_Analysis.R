@@ -10,6 +10,8 @@ library(tidyverse)
 library(ggExtra)
 library(ggrepel)
 library(ggpubr)
+library(lme4)
+library(broom)
 
 pines_long <- read.csv("Data/pine_demography_cleaned_long.csv")
 plot_info <- read.csv("Data/plot_information.csv")
