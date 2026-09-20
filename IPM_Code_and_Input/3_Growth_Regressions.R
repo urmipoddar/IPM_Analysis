@@ -10,7 +10,6 @@ library(tidyverse)
 library(glmmTMB)
 library(gamlss)
 library(performance)
-library(splines)
 library(DHARMa)
 
 pines_long <- read.csv("Data/pine_demography_cleaned_long.csv")
@@ -26,6 +25,18 @@ mse <- function(pred, obs){
 mae <- function(pred, obs){
   mean(abs(obs-pred))
 }
+
+# function for translating glmmTMB-style random effects formula
+#  into gamlss syntax
+
+translate_to_gamlss_formula <- function(glmmTMB_formula){
+  f_chr <- paste(deparse(glmmTMB_formula), collapse = " ")
+  f_chr <- gsub("\\(1 \\| SITEAREA\\)", "random(SITEAREA)", f_chr)
+  f_chr <- gsub("\\(1 \\| PLOTCODE\\)", "random(PLOTCODE)", f_chr)
+  f_chr <- gsub("\\(1 \\| IND_ID\\)", "random(IND_ID)", f_chr)
+  as.formula(f_chr)
+}
+
 #Data formatting---------------------------------------------------
 #adding plot information
 plot_info <- plot_info|>
@@ -85,47 +96,44 @@ unique(growth_dat[,c("CENSUS_NUM", "CENSUS_next",
        "CensusInterval", "START_DATE",
         "Date_next")]) #looks correct
 
-#Fitting models 1: Linear models-----------------------------------
-# Based on prelim analysis, all models are fitted on log(HT_next)
-# With log height as the predictor
+#Fitting models-------------------------------------
+# Based on prelim analysis:
+# All models are fitted on log(HT_next)
+# with log(HT) as predictor
+# Residuals are t-distributed rather than normal, to account for heavy tails
+# and variance is modelled as a function of log(HT) to account for heteroskedascity
 
 #Baseline model - random effects & census interval only
 mGrwt_baseline <- glmmTMB(log(HT_next) ~ CensusInterval+
-  (1|SITEAREA)+(1|IND_ID),
+  (1|PLOTCODE)+(1|IND_ID),
   family = t_family(), 
   data = growth_dat)
 
-#Height only model - log linear effect of height
-mGrwt_ht <- glmmTMB(log(HT_next) ~ log(HT)+ CensusInterval+
-   (1|SITEAREA)+(1|IND_ID), data = growth_dat,
-  family = t_family(),
-  dispformula = ~ log(HT))
-
-#Height & AREA
+#Height & AREA -log linear effect of height
 mGrwt_ht_area <- glmmTMB(log(HT_next) ~ 
   log(HT)+AREA+ CensusInterval+
-  (1|SITEAREA)+(1|IND_ID), data = growth_dat,
+  (1|PLOTCODE)+(1|IND_ID), data = growth_dat,
     family = t_family(),
   dispformula = ~ log(HT))
 
 #Height + AREA with quadratic height
 mGrwt_ht2_area <- glmmTMB(log(HT_next) ~ 
   poly(log(HT),2)+AREA+ CensusInterval+
-  (1|SITEAREA)+(1|IND_ID), data = growth_dat,
+  (1|PLOTCODE)+(1|IND_ID), data = growth_dat,
     family = t_family(),
   dispformula = ~ log(HT))
 
 #Height & AREA - ht x area interaction
 mGrwt_ht_area_htarea <- glmmTMB(log(HT_next) ~ 
   log(HT)*AREA+ CensusInterval+
-  (1|SITEAREA)+(1|IND_ID), data = growth_dat,
+  (1|PLOTCODE)+(1|IND_ID), data = growth_dat,
     family = t_family(),
   dispformula = ~ log(HT))
 
 #Height & AREA - ht x area interaction, quadratic height
 mGrwt_ht2_area_htarea <- glmmTMB(log(HT_next) ~ 
   poly(log(HT),2)*AREA+ CensusInterval+
-  (1|SITEAREA)+(1|IND_ID), 
+  (1|PLOTCODE)+(1|IND_ID), 
   data = growth_dat,
     family = t_family(),
   dispformula = ~ log(HT))
@@ -133,70 +141,40 @@ mGrwt_ht2_area_htarea <- glmmTMB(log(HT_next) ~
 #Height, AREA & time since fire
 mGrwt_ht_area_time <- glmmTMB(log(HT_next) ~ 
   log(HT)+AREA + TimeSinceFire + CensusInterval+
-  (1|SITEAREA)+(1|IND_ID), data = growth_dat,
+  (1|PLOTCODE)+(1|IND_ID), data = growth_dat,
     family = t_family(),
   dispformula = ~ log(HT))
-
-#Height, AREA & time since fire, quadratic height
-# mGrwt_ht2_area_time <- glmmTMB(log(HT_next) ~ 
-#   poly(log(HT),2)+AREA + TimeSinceFire + CensusInterval+
-#   (1|SITEAREA)+(1|IND_ID), data = growth_dat,
-#     family = t_family(),
-#   dispformula = ~ log(HT))
 
 #Height, AREA & time since fire, height x area interaction
 mGrwt_ht_area_htarea_time <- glmmTMB(log(HT_next) ~ 
   log(HT)*AREA + TimeSinceFire + CensusInterval+
-  (1|SITEAREA)+(1|IND_ID), data = growth_dat,
+  (1|PLOTCODE)+(1|IND_ID), data = growth_dat,
     family = t_family(),
   dispformula = ~ log(HT))
 
 #Height, AREA & time since fire, height x area interaction, quadratic ht
 mGrwt_ht2_area_htarea_time <- glmmTMB(log(HT_next) ~ 
   poly(log(HT),2)*AREA + TimeSinceFire + CensusInterval+
-  (1|SITEAREA)+(1|IND_ID), data = growth_dat,
+  (1|PLOTCODE)+(1|IND_ID), data = growth_dat,
     family = t_family(),
   dispformula = ~ log(HT))
 
   mGrwt_ht2_area_htarea_time_normalres <- glmmTMB(log(HT_next) ~ 
   poly(log(HT),2)*AREA + TimeSinceFire + CensusInterval+
-  (1|SITEAREA)+(1|IND_ID), data = growth_dat,
+  (1|PLOTCODE)+(1|IND_ID), data = growth_dat,
   dispformula = ~ log(HT))
 
-m_skewt <- gamlss(
-  log(HT_next) ~ poly(log(HT), 2) * AREA + 
-    TimeSinceFire + CensusInterval  + 
-    random(PLOTCODE) + random(IND_ID),
-  sigma.formula = ~ log(HT),
-  nu.formula = ~ 1,     
-  family = ST3,
-  data = growth_dat)
-
-m_skewt3 <- gamlss(
-  log(HT_next) ~ poly(log(HT), 2) * AREA + TimeSinceFire + CensusInterval +
-    random(SITEAREA) + random(PLOTCODE) + random(IND_ID),
-  sigma.formula = ~ log(HT) + I(log(HT)^2),
-  nu.formula = ~ log(HT),
-  tau.formula = ~ log(HT),
-  family = ST3,
-  data = growth_dat)
-
-#model diagnostics-------------------------------------------------
+#model diagnostics----------------------------------------------
 #list of models
 models <- list(
   mGrwt_baseline = mGrwt_baseline,
-  mGrwt_ht = mGrwt_ht,
   mGrwt_ht_area = mGrwt_ht_area,
   Grwt_ht2_area = mGrwt_ht2_area,
   mGrwt_ht_area_htarea = mGrwt_ht_area_htarea,
   Grwt_ht2_area_htarea = mGrwt_ht2_area_htarea,
   mGrwt_ht_area_time = mGrwt_ht_area_time,
-  #mGrwt_ht2_area_time = mGrwt_ht2_area_time,
   mGrwt_ht_area_htarea_time = mGrwt_ht_area_htarea_time,
-  mGrwt_ht2_area_htarea_time = mGrwt_ht2_area_htarea_time,
-  #m_skewt = m_skewt,
-  mGrwt_ht2_area_htarea_time_normalres = 
-  mGrwt_ht2_area_htarea_time_normalres)
+  mGrwt_ht2_area_htarea_time = mGrwt_ht2_area_htarea_time)
 
 #checking for singular fit issues, convergence issues,
 #  overdispersion and across-plots variation
@@ -208,10 +186,17 @@ model_diagnostics <- tibble::tibble(
   DispersionRatio = sapply(models, \(x) 
       check_overdispersion(x)$dispersion_ratio),
   AcrossPlotVar = sapply(models, \(x) 
-          VarCorr(x)$cond$SITEAREA|>as.numeric()|>sqrt()),
+          VarCorr(x)$cond$PLOTCODE|>as.numeric()|>sqrt()),
 AcrossIndVar = sapply(models, \(x) 
           VarCorr(x)$cond$IND_ID|>as.numeric()|>sqrt()))
-model_diagnostics
+model_diagnostics|>View() #no major issues
+
+#histograms of residuals
+for(m in names(models)){
+  model = models[[m]]
+  hist(residuals(model), breaks = 50, main = m)
+  dev.new()
+} #all residuals are heavy tailed
 
 #QQ-plots
 for(m in names(models)){
@@ -219,21 +204,21 @@ for(m in names(models)){
   qqnorm(residuals(model), main = m)
   qqline(residuals(model))
   dev.new()
-}
+} #this again shows the heavy tails
 
 #plotting DHARMa residuals
 res <- lapply(models, simulateResiduals)
 for (m in names(res)) {
   plot(res[[m]], title = m, quantreg = T)
   dev.new()
-}
+} #KS test is siginificant for all models, some models also show heteroskedacity  
 for (m in names(res)) {
   hist(res[[m]], main = m)
   dev.new()
-}
+} #skewed residual distributions
 
 #checking shapes of predicted curves----------------------------
-#Building newdat grid with ALL predictors
+#Building new data grid with all predictors
 newdat <- expand.grid(
   HT = seq(
     min(growth_dat$HT, na.rm = TRUE),
@@ -261,20 +246,21 @@ mu_marginal_linear <- predict(
   newdata = growth_dat,
   type = "response", 
   re.form = NA)
-total_resid_linear <- log(growth_dat$HT_next) - mu_marginal_linear   # captures RE variance + residual + any skew
-smear_factor <- mean(exp(total_resid_linear))
+total_resid_linear <- log(growth_dat$HT_next) - 
+          mu_marginal_linear   # captures RE variance + residual + any skew
+smear_factor <- mean(exp(total_resid_linear))#Daun's smearing factor
 newdat$PredLinear_corrected <- 
       exp(newdat$PredLinear)*smear_factor
 
-# Compute Duan's smearing factor from the QUADRATIC model's
-# own marginal residuals (not the linear model's)
+#Predictions on the raw scale - quadratic model
 mu_marginal_quad <- predict(
   mGrwt_ht2_area_htarea,
   newdata = growth_dat,
   type = "response",
   re.form = NA)
-total_resid_quad <- log(growth_dat$HT_next) - mu_marginal_quad
-smear_factor_quad <- mean(exp(total_resid_quad))
+total_resid_quad <- log(growth_dat$HT_next) - 
+          mu_marginal_quad
+smear_factor_quad <- mean(exp(total_resid_quad)) #Daun's smearing factor
 newdat$PredQuad_corrected <- exp(newdat$PredQuad) * smear_factor_quad
 
 
@@ -312,6 +298,214 @@ model_perform$MSE <- sapply(models,
    function(x){mse(predict(x, re.form = NA),
      log(growth_dat$HT_next))})
 model_perform|>
-  mutate(MSE_by_var = 
+  mutate(Pseudo_R_squared = 
     1-MSE/var(log(growth_dat$HT_next)))|>
-  arrange(MSE)
+  arrange(MSE, AIC)
+model_perform
+
+#Model accuracy comparisons 1: time-series test-train split-----------------------------------------        
+# Comparing models based on predictive accuracy on unseen data
+ 
+model_perform$TT_MSE <- NA
+model_perform$TT_MAE <- NA
+ 
+# Test-train split:
+# data upto census 9 used for training, rest for testing
+TrainDat <- growth_dat|>
+  filter(CENSUS_NUM<=9)
+TestDat <- growth_dat|>
+  filter(CENSUS_NUM>9)
+ 
+#Re-fitting models and testing accuracy
+for(m in names(models)){
+  model <- models[[m]]
+  new_model <- glmmTMB(formula = formula(model),
+    data = TrainDat,
+    family = t_family(),
+    dispformula = model$modelInfo$allForm$dispformula)
+  preds <- predict(new_model, newdata= TestDat, 
+            type = "response", re.form = NA)
+  model_perform$TT_MSE[model_perform$Name ==m] <-
+    mse(preds, log(TestDat$HT_next))
+  model_perform$TT_MAE[model_perform$Name ==m] <-
+    mae(preds, log(TestDat$HT_next))
+ 
+  print(c(m, check_singularity(new_model)))
+  print(new_model$fit$convergence)
+}
+
+model_perform|>
+  select(Name, AIC,TT_MSE,TT_MAE)|>
+  mutate(TT_Psuedo_R2 =
+     1- TT_MSE/var(log(TestDat$HT_next)))|>
+  arrange(TT_MSE)
+
+#Model accuracy comparisons 2: time-series cross-validation-----------------------------------------        
+# Comparing models based on predictive accuracy on unseen data
+# with 3 fold expanding window time-series cross validation (TSV)
+#
+# Size measurements only available for
+#  censuses 3, 5, 7, 9, 11-15
+# i.e. 8 distinct pairs of censuses
+
+census_levels <- sort(unique(growth_dat$CENSUS_NUM))
+ 
+#Adding columns for storing TSV accuracy scores
+model_perform <- model_perform|>
+  mutate(TSV1_MSE = NA, TSV2_MSE = NA, TSV3_MSE =NA,
+  TSV1_MAE = NA, TSV2_MAE = NA, TSV3_MAE =NA)
+ 
+folds <- 3 #number of cross-validation folds
+min_training_size <- 5 #minimum number of census-points in training data
+test_size <- 1 #number of census-points in test data -- 
+              #kept at 1 so all 3 expanding-window folds fit within 
+              #the 8 available #census points 
+ 
+for( i in 1:folds){
+  #census-points in training data
+  train_censuses <- census_levels[1:(min_training_size+i-1)]
+ 
+  #census-points in test data
+  test_censuses <- 
+    census_levels[(min_training_size+i):
+      (min_training_size+i+test_size-1)]
+ 
+  #test-train split
+  TrainDat <- growth_dat|>
+    filter(CENSUS_NUM %in% train_censuses)
+  TestDat <- growth_dat|>
+    filter(CENSUS_NUM %in% test_censuses)
+ 
+  #Re-fitting models and testing accuracy
+  for(m in names(models)){
+    model <- models[[m]]
+ 
+    #fitting model
+    new_model <- glmmTMB(formula = formula(model),
+      data = TrainDat,
+      family = t_family(),
+      dispformula = model$modelInfo$allForm$dispformula)
+ 
+    #predicting heldout data
+    preds <- predict(new_model, newdata= TestDat, 
+            type = "response", re.form = NA)
+ 
+    #calculating accuracy
+    MSE_val <- mse(preds, log(TestDat$HT_next))
+    MAE_val <- mae(preds, log(TestDat$HT_next))
+ 
+    #recording results
+    col_mse <- paste0("TSV", i, "_MSE")
+    model_perform[which(model_perform$Name==m), col_mse] <- MSE_val
+    col_mae <- paste0("TSV", i, "_MAE")
+    model_perform[which(model_perform$Name==m), col_mae] <- MAE_val
+ 
+    # tracking progress
+    print(c(i,  m, check_singularity(new_model)))
+    print(new_model$fit$convergence)
+  }
+}
+ 
+model_perform|>
+  select(Name, AIC, starts_with("TSV") & ends_with("MSE"))|>
+  rowwise()|>
+  mutate(mean_TSV_MSE = mean(c_across(starts_with("TSV"))),
+          sd_TSV_MSE = sd(c_across(starts_with("TSV"))))|>
+  arrange(mean_TSV_MSE)
+ 
+model_perform|>
+  select(Name, AIC, starts_with("TSV") & ends_with("MAE"))|>
+  rowwise()|>
+  mutate(mean_TSV_MAE = mean(c_across(starts_with("TSV"))),
+          sd_TSV_MAE = sd(c_across(starts_with("TSV"))))|>
+  arrange(mean_TSV_MAE)
+
+#Model accuracy comparison 3: Spatial cross validation------------------------------------------------
+# Comparing models based on predictive accuracy on unseen SITEAREAs
+# with leave-one-site-out (LOSO) cross validation
+#
+# SCC5 is excluded as a holdout target 
+# because it is the only SITEAREA in SCC
+# so holding it out would entirely drop that AREA level from training data
+
+sites <- setdiff(levels(growth_dat$SITEAREA), "SCC5")
+n_sites <- length(sites)
+ 
+# Adding columns for storing spatial CV accuracy scores
+model_perform <- model_perform |>
+  mutate(!!!setNames(rep(list(NA_real_), n_sites*2),
+                      c(paste0("SP", 1:n_sites, "_MSE"),
+                        paste0("SP", 1:n_sites, "_MAE"))))
+ 
+for (i in 1:n_sites) {
+ 
+  held_out_site <- sites[i]
+ 
+  # spatial train-test split: hold out one site
+  TrainDat <- growth_dat |> filter(SITEAREA != held_out_site)
+  TestDat  <- growth_dat |> filter(SITEAREA == held_out_site)
+ 
+  for (m in names(models)) {
+    model <- models[[m]]
+ 
+    # refitting model on all sites except the held-out one
+    new_model <- glmmTMB(formula = formula(model),
+                        data = TrainDat,
+                        family = t_family(),
+                        dispformula = model$modelInfo$allForm$dispformula)
+ 
+    # predicting the held-out data
+    preds <- predict(new_model, newdata = TestDat, type = "response", re.form = NA)
+ 
+    MSE_val <- mse(preds, log(TestDat$HT_next))
+    MAE_val <- mae(preds, log(TestDat$HT_next))
+ 
+    # recording results
+    col_mse <- paste0("SP", i, "_MSE")
+    model_perform[which(model_perform$Name == m), col_mse] <- MSE_val
+    col_mae <- paste0("SP", i, "_MAE")
+    model_perform[which(model_perform$Name == m), col_mae] <- MAE_val
+ 
+    # tracking progress
+    print(c(i, held_out_site, m, check_singularity(new_model)))
+    print(new_model$fit$convergence)
+  }
+}
+ 
+model_perform |>
+  select(Name, AIC, starts_with("SP") & ends_with("MSE")) |>
+  rowwise() |>
+  mutate(mean_SP_MSE = 
+    mean(c_across(starts_with("SP")), na.rm = TRUE),
+     sd_SP_MSE = sd(c_across(starts_with("SP")), na.rm = TRUE)) |>
+  arrange(mean_SP_MSE)|>View()
+ 
+model_perform |>
+  select(Name, AIC, starts_with("SP") & ends_with("MAE")) |>
+  rowwise() |>
+  mutate(mean_SP_MAE = 
+    mean(c_across(starts_with("SP")), na.rm = TRUE)) |>
+  arrange(mean_SP_MAE)|>View()
+
+#Choosing best models------------------------------------------------
+# Ranking models based on AIC and CV accuracy
+# and choosing top 4
+ 
+n_top <- 4 #number of models to choose
+ 
+model_perform_summary <- model_perform |>
+  rowwise() |>
+  mutate(mean_TSV_MSE = mean(c_across(starts_with("TSV") & ends_with("MSE"))),
+         mean_SP_MSE  = mean(c_across(starts_with("SP") & ends_with("MSE")), na.rm = TRUE)) |>
+  ungroup() |>
+  mutate(rank_AIC = rank(AIC),
+         rank_TSV = rank(mean_TSV_MSE),
+         rank_SP  = rank(mean_SP_MSE),
+         rank_sum = rank_AIC + rank_TSV + rank_SP) |>
+  select(Name, AIC, mean_TSV_MSE, mean_SP_MSE, rank_AIC, rank_TSV, rank_SP, rank_sum) |>
+  arrange(rank_sum)
+ 
+model_perform_summary|>View()
+ 
+chosen_models <- model_perform_summary$Name[1:n_top]
+chosen_models
