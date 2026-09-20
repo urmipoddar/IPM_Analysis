@@ -80,28 +80,28 @@ table(survival_dat$CensusInterval) #looks correct
 #Baseline model - random effects and time offset only
 mSurv_baseline <- glmmTMB(Dead_next ~ 
   offset(log(CensusInterval))+
-  (1|SITEAREA)+(1|IND_ID),
+  (1|PLOTCODE)+(1|IND_ID),
   data = survival_dat,
   family = binomial(link="cloglog"))
 
 #Height only model - linear effect of height
 mSurv_ht <- glmmTMB(Dead_next ~ HT+
   offset(log(CensusInterval))+ 
-  (1|SITEAREA)+(1|IND_ID),
+  (1|PLOTCODE)+(1|IND_ID),
   data = survival_dat,
  family = binomial(link="cloglog"))
 
 #Height & AREA
 mSurv_ht_area <- glmmTMB(Dead_next ~ HT+AREA+
   offset(log(CensusInterval))+ 
-  (1|SITEAREA)+(1|IND_ID),
+  (1|PLOTCODE)+(1|IND_ID),
   data = survival_dat,
  family = binomial(link="cloglog"))
 
 #Height & AREA - ht x area interaction
 mSurv_ht_area_htarea <- glmmTMB(Dead_next ~ HT*AREA+
   offset(log(CensusInterval))+ 
-  (1|SITEAREA)+(1|IND_ID),
+  (1|PLOTCODE)+(1|IND_ID),
   data = survival_dat,
  family = binomial(link="cloglog"))
 
@@ -109,7 +109,7 @@ mSurv_ht_area_htarea <- glmmTMB(Dead_next ~ HT*AREA+
 mSurv_ht_area_time <- glmmTMB(Dead_next ~ 
   HT+AREA+TimeSinceFire+
   offset(log(CensusInterval))+ 
-  (1|SITEAREA)+(1|IND_ID),
+  (1|PLOTCODE)+(1|IND_ID),
   data = survival_dat,
  family = binomial(link="cloglog"))
 
@@ -117,7 +117,7 @@ mSurv_ht_area_time <- glmmTMB(Dead_next ~
 mSurv_ht_area_htarea_time <- glmmTMB(Dead_next ~ HT*AREA+
   TimeSinceFire+
   offset(log(CensusInterval))+ 
-  (1|SITEAREA)+(1|IND_ID),
+  (1|PLOTCODE)+(1|IND_ID),
   data = survival_dat,
  family = binomial(link="cloglog"))
 
@@ -126,7 +126,7 @@ mSurv_ht2_area_time <- glmmTMB(Dead_next ~
   HT+ I(HT^2)+AREA+
   TimeSinceFire+
   offset(log(CensusInterval))+ 
-  (1|SITEAREA)+(1|IND_ID),
+  (1|PLOTCODE)+(1|IND_ID),
   data = survival_dat,
  family = binomial(link="cloglog"))
 
@@ -135,7 +135,7 @@ mSurv_ht2_area_htarea_time <- glmmTMB(Dead_next ~
   (HT+ I(HT^2))*AREA+
   TimeSinceFire+
   offset(log(CensusInterval))+ 
-  (1|SITEAREA)+(1|IND_ID),
+  (1|PLOTCODE)+(1|IND_ID),
   data = survival_dat,
  family = binomial(link="cloglog"))
 
@@ -143,7 +143,7 @@ mSurv_ht2_area_htarea_time <- glmmTMB(Dead_next ~
 mSurv_htLL_area_time <- glmmTMB(Dead_next ~ HT+log(HT)+AREA+
   TimeSinceFire+
   offset(log(CensusInterval))+ 
-  (1|SITEAREA)+(1|IND_ID),
+  (1|PLOTCODE)+(1|IND_ID),
   data = survival_dat,
   family = binomial(link="cloglog"))
 
@@ -152,7 +152,7 @@ mSurv_htLL_area_htarea_time <- glmmTMB(Dead_next ~ HT+log(HT)+AREA+
   HT:AREA+log(HT):AREA+
   TimeSinceFire+
   offset(log(CensusInterval))+ 
-  (1|SITEAREA)+(1|IND_ID),
+  (1|PLOTCODE)+(1|IND_ID),
   data = survival_dat,
  family = binomial(link="cloglog"))
 
@@ -160,7 +160,7 @@ mSurv_htLL_area_htarea_time <- glmmTMB(Dead_next ~ HT+log(HT)+AREA+
 mSurv_htLog_area_time <- glmmTMB(Dead_next ~ log(HT)+AREA+
   TimeSinceFire+
   offset(log(CensusInterval))+ 
-  (1|SITEAREA)+(1|IND_ID),
+  (1|PLOTCODE)+(1|IND_ID),
   data = survival_dat,
   family = binomial(link="cloglog"))
 
@@ -168,7 +168,7 @@ mSurv_htLog_area_time <- glmmTMB(Dead_next ~ log(HT)+AREA+
 mSurv_htLog_area_htarea_time <- glmmTMB(Dead_next ~ log(HT)*AREA+
   TimeSinceFire+
   offset(log(CensusInterval))+ 
-  (1|SITEAREA)+(1|IND_ID),
+  (1|PLOTCODE)+(1|IND_ID),
   data = survival_dat,
  family = binomial(link="cloglog"))
 
@@ -176,7 +176,7 @@ mSurv_htLog_area_htarea_time <- glmmTMB(Dead_next ~ log(HT)*AREA+
 mSurv_htS_area_time <- glmmTMB(Dead_next ~ ns(HT, 3)+AREA+
   TimeSinceFire+
   offset(log(CensusInterval))+ 
-  (1|SITEAREA)+(1|IND_ID),
+  (1|PLOTCODE)+(1|IND_ID),
   data = survival_dat,
  family = binomial(link="cloglog"))
 
@@ -184,7 +184,7 @@ mSurv_htS_area_time <- glmmTMB(Dead_next ~ ns(HT, 3)+AREA+
 mSurv_htS_area_htarea_time <- glmmTMB(Dead_next ~ ns(HT, 3)*AREA+
   TimeSinceFire+
   offset(log(CensusInterval))+ 
-  (1|SITEAREA)+(1|IND_ID),
+  (1|PLOTCODE)+(1|IND_ID),
   data = survival_dat,
  family = binomial(link="cloglog"))
 
@@ -216,7 +216,7 @@ model_diagnostics <- tibble::tibble(
   DispersionRatio = sapply(models, \(x) 
       check_overdispersion(x)$dispersion_ratio),
   AcrossPlotVar = sapply(models, \(x) 
-          VarCorr(x)$cond$SITEAREA|>as.numeric()|>sqrt()),
+          VarCorr(x)$cond$PLOTCODE|>as.numeric()|>sqrt()),
 AcrossIndVar = sapply(models, \(x) 
           VarCorr(x)$cond$IND_ID|>as.numeric()|>sqrt()))
 model_diagnostics
@@ -425,10 +425,9 @@ model_perform|>
 # Comparing models based on predictive accuracy on unseen SITEASREAs
 # with leave-one-site-out (LOSO) cross validation
 #
-# SCC5 is excluded as a holdout target - it's the only SITEAREA in SCC
-# so holding it out would drop that AREA level from
-# training entirely and break prediction for any AREA-containing model.
-
+# SCC5 is excluded as a holdout target 
+# because it is the only SITEAREA in SCC
+# so holding it out would entirely drop that AREA level from training data
 sites <- setdiff(levels(survival_dat$SITEAREA), "SCC5")
 n_sites <- length(sites)   # 7
 
