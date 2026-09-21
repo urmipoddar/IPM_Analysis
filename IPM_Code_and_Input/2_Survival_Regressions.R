@@ -433,7 +433,7 @@ n_sites <- length(sites)   # 7
 
 # Adding columns for storing spatial CV accuracy scores
 model_perform <- model_perform |>
-  mutate(!!!setNames(rep(list(NA_real_), n_sites*3),
+  mutate(!!!setNames(rep(list(NA_real_), n_sites*2),
                       c(paste0("SP", 1:n_sites, "_Brier"),
                         paste0("SP", 1:n_sites, "_LogLoss"))))
 
@@ -483,3 +483,34 @@ model_perform |>
   mutate(mean_LogLoss = mean(c_across(starts_with("SP")), na.rm = TRUE)) |>
   arrange(mean_LogLoss)
 
+#Choosing best models------------------------------------------------
+# Ranking models based on AIC and CV accuracy
+# and choosing top 4
+ 
+n_top <- 4 #number of models to choose
+ 
+model_perform_summary <- model_perform |>
+  rowwise() |>
+  mutate(mean_TSV_Brier = mean(c_across(starts_with("TSV") &
+    ends_with("Brier"))),
+         mean_SP_Brier = mean(c_across(starts_with("SP") &
+                   ends_with("Brier")), na.rm = TRUE)) |>
+  ungroup() |>
+  mutate(rank_AIC = rank(AIC),
+         rank_TSV = rank(mean_TSV_Brier),
+         rank_SP  = rank(mean_SP_Brier),
+         rank_sum = rank_AIC + rank_TSV + rank_SP) |>
+  select(Name, AIC, mean_TSV_Brier, 
+    mean_SP_Brier, rank_AIC, rank_TSV, rank_SP, rank_sum) |>
+  arrange(rank_sum)
+ 
+model_perform_summary|>View()
+ 
+chosen_models <- model_perform_summary$Name[1:n_top]
+chosen_models
+
+#savingt top 4 models 
+if (!dir.exists("Output")) {
+  dir.create("Output", recursive = TRUE)
+}
+saveRDS(models[chosen_models], "Output/SurvivalModels.rds")
