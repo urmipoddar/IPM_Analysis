@@ -19,12 +19,12 @@ plot_info <- read.csv("Data/plot_information.csv")
 #Functions--------------------------------------------------
 #Mean Squared Error
 mse <- function(pred, obs){
-  mean((obs-pred)^2)
+  mean((obs-pred)^2, na.rm = T)
 }
 
 #Mean absolute error
 mae <- function(pred, obs){
-  mean(abs(obs-pred))
+  mean(abs(obs-pred), na.rm = T)
 }
 
 # function for translating glmmTMB-style random effects formula
@@ -517,28 +517,31 @@ model_perform_summary|>View()
 chosen_models <- model_perform_summary$Name[1:n_top]
 chosen_models
 
-
-#Examining skewness/kurtosis relationship with predicted size------------------------------
+#Examining skewness & kurtosis of residuals with predicted size------------------------------
 # Following Miller & Ellner (2025, Ecology, "My, how you've grown"): 
 # this section fits spline quantile regressions(qgam)  
-# to scaled residuals of the best pilot models, 
+# to scaled residuals of the best mean-structed model, 
 # then computes their nonparametric (quantile-based) skewness and excess kurtosis
 # as a function of predicted size.
-
+ 
 # Selecting best pilot model
 diag_model <- models[[chosen_models[1]]]
  
-#  fitted mean (log scale) and dispersion (scale parameter) for every observation
-growth_dat$fitted_mean <- predict(diag_model, newdata = growth_dat,
-                                   type = "response", re.form = NA)
-growth_dat$fitted_disp <- predict(diag_model, newdata = growth_dat,
-                                   type = "disp", re.form = NA)
+# extracting fitted mean (log scale) and dispersion (scale parameter) for every observation
+growth_dat$fitted_mean <- predict(diag_model, 
+  newdata = growth_dat,
+   type = "response", re.form = NA)
+growth_dat$fitted_disp <- predict(diag_model, 
+  newdata = growth_dat,
+     type = "disp", re.form = NA)
  
 # extracting scaled residuals
-growth_dat$scaled_resid <- (log(growth_dat$HT_next) - growth_dat$fitted_mean) /
-                                                  growth_dat$fitted_disp
+growth_dat$scaled_resid <-
+   (log(growth_dat$HT_next) - growth_dat$fitted_mean) /
+                     growth_dat$fitted_disp
  
-# fittingspline quantile regression at 5/10/25/50/75/90/95% quantiles
+# fitting spline quantile regression at 
+# 5/10/25/50/75/90/95% quantiles
 taus <- c(0.05, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95)
  
 qgam_fits <- lapply(taus, function(tau) {
@@ -546,20 +549,25 @@ qgam_fits <- lapply(taus, function(tau) {
 })
 names(qgam_fits) <- paste0("q", taus)
  
-# predicting each quantile across the observed range of fitted values
-pred_grid <- data.frame(fitted_mean = seq(min(growth_dat$fitted_mean),
-                                           max(growth_dat$fitted_mean),
-                                           length.out = 200))
+# predicting from each qgam regression
+# across the observed range of fitted height values
+pred_grid <- data.frame(fitted_mean =
+   seq(min(growth_dat$fitted_mean),
+   max(growth_dat$fitted_mean),
+     length.out = 200))
 for (tau in taus) {
-  pred_grid[[paste0("q", tau)]] <- predict(qgam_fits[[paste0("q", tau)]],
-                                            newdata = pred_grid)}
+  pred_grid[[paste0("q", tau)]] <- 
+    predict(qgam_fits[[paste0("q", tau)]],
+    newdata = pred_grid)
+}
  
 # calculating NP Skewness (Eq. 1-2 in the paper, alpha = 0.1, "Bowley's skewness") and
 # NP Excess Kurtosis (Eq. 3, alpha = 0.05, scaled relative to a Gaussian so
 # that 0 = Gaussian-like tails and +-1 indicates an extreme departure)
-gaussian_np_kurtosis <- (qnorm(0.95) - qnorm(0.05)) / (qnorm(0.75) - qnorm(0.25))
- 
-pred_grid$NP_skewness <- (pred_grid$q0.1 + pred_grid$q0.9 - 2*pred_grid$q0.5) /
+gaussian_np_kurtosis <- 
+  (qnorm(0.95) - qnorm(0.05)) / (qnorm(0.75) - qnorm(0.25))
+pred_grid$NP_skewness <-
+   (pred_grid$q0.1 + pred_grid$q0.9 - 2*pred_grid$q0.5) /
   (pred_grid$q0.9 - pred_grid$q0.1)
 pred_grid$NP_kurtosis <- (pred_grid$q0.95 - pred_grid$q0.05) /
   (pred_grid$q0.75 - pred_grid$q0.25)
@@ -569,9 +577,7 @@ pred_grid$NP_excess_kurtosis <- pred_grid$NP_kurtosis / gaussian_np_kurtosis - 1
 quantile_long <- pred_grid |>
   select(fitted_mean, starts_with("q0")) |>
   pivot_longer(-fitted_mean, names_to = "quantile", values_to = "value")
-
-
-# Plotting NP skewness (blue) and NP excess kurtosis (red) 
+ 
 p_resid <- ggplot() +
   geom_point(data = growth_dat, aes(fitted_mean, scaled_resid), alpha = 0.15) +
   geom_line(data = quantile_long, aes(fitted_mean, value, group = quantile)) +
@@ -580,6 +586,7 @@ p_resid <- ggplot() +
        title = "Scaled residuals and quantile trends")
 p_resid
  
+# Plotting NP skewness (blue) and NP excess kurtosis (red) 
 p_skew_kurt <- ggplot(pred_grid) +
   geom_hline(yintercept = 0, lty = "dashed", col = "grey50") +
   geom_line(aes(fitted_mean, NP_skewness), col = "blue", linewidth = 1) +
@@ -589,27 +596,84 @@ p_skew_kurt <- ggplot(pred_grid) +
        y = "NP skewness (blue) / NP excess kurtosis (red)",
        title = "NP skewness and excess kurtosis vs. predicted size")
 p_skew_kurt #both skewness and kurtosis vary with predicted size
-
-#Fitting skewed-t (gamlss) models for the chosen mean structures------------------------------------------------
-# Both skewness and kurtosis were just shown to vary with predicted size,
-# so sigma (variance parameter), nu (skewness parameter), and 
-# tau (kurtosis parameter) are all specified as functions of log(HT) directly
-
-#specifying formula for sigma, nu and tau parameters
+ 
+#Comparing different skew-t distributions------------------------------------------------
+# Testing different skew-t distributions on the best mean-structured model
+ 
+#specifying formula for sigma, nu and tau parameters:
+# Previous section shows that
+# both skewness and kurtosis vary with predicted size,
+# so sigma (variance parameter), nu (skewness parameter), and
+# tau (kurtosis parameter) are all specified as functions of log(HT)
+# nu and tau modelled as quadratic functions of height - 
+# based on shape of skwness/kurtosis vs pred HT curves and preliminary analyses
 skewt_formula <- list(
   sigma.formula = ~ log(HT),
-  nu.formula    = ~ log(HT),
-  tau.formula   = ~ log(HT))
+  nu.formula    = ~ log(HT) + I(log(HT)^2),
+  tau.formula   = ~ log(HT) + I(log(HT)^2))
+ 
+top_mean_model_name <- chosen_models[1]
+top_mean_formula_gamlss <- translate_to_gamlss_formula(formula(models[[top_mean_model_name]]))
+ 
+#Different kinds of skew-t distributions to try out
+st_families <- c("ST1", "ST2", "ST3", "ST4", "ST5")
+ 
+#Parallelizing code
+n_cores <- max(1, parallel::detectCores() - 2)
+cl <- makeCluster(n_cores, type = "PSOCK")
+clusterEvalQ(cl, library(gamlss))
+clusterExport(cl, varlist = c("top_mean_formula_gamlss",
+ "skewt_formula", "growth_dat"))
+ 
+#Fitting models
+st_models_list <- parLapply(cl, st_families, function(fam) {
+  tryCatch(
+    gamlss(
+      formula = top_mean_formula_gamlss,
+      sigma.formula = skewt_formula$sigma.formula,
+      nu.formula = skewt_formula$nu.formula,
+      tau.formula = skewt_formula$tau.formula,
+      family = fam,
+      data = growth_dat),
+    error = function(e) conditionMessage(e)   # capture the error text, not just NULL
+  )
+})
+ 
+stopCluster(cl)
+ 
+names(st_models_list) <- paste0(top_mean_model_name, "__", st_families)
+ 
+#checking if any models failed to fit
+#  a failed fit is a character string (the error message), not a gamlss object
+is_gamlss_fit_st <- sapply(st_models_list, inherits, "gamlss")
+if (any(!is_gamlss_fit_st)) {
+  print(st_models_list[!is_gamlss_fit_st])   # shows the actual error per failed family
+}
+st_models <- st_models_list[is_gamlss_fit_st]
+names(st_models)
+ 
+# Model comparison with AIC  
+st_gaic <- tibble::tibble(
+  Family = names(st_models),
+  AIC = sapply(st_models, GAIC))
+st_gaic |> arrange(AIC) #ST3 model is the best
+ 
+best_st_name <- st_gaic$Family[which.min(st_gaic$AIC)]
+best_st_name #ST3 model is the best
+ 
+#Fitting ST3 (skew-t) models for the chosen mean structures------------------------------------------------
+# ST3 confirmed as the best-performing skew-t construction above, so
+# so it is used here to re-fit the top 4 mean structures
 
 #list for storing gamlss models
 gamlss_models <- list()
-
-#fitting skew-t models
+ 
+#fitting ST3 models
 for (m in chosen_models) {
   print(m)
   mean_formula_gamlss <- 
     translate_to_gamlss_formula(formula(models[[m]]))
-
+ 
   fit <- tryCatch(
     gamlss(
       formula = mean_formula_gamlss,
@@ -618,81 +682,189 @@ for (m in chosen_models) {
       tau.formula = skewt_formula$tau.formula,
       family = ST3,
       data = growth_dat),
-    error = function(e) { message(m, " failed to fit: ", e$message); NULL }
+    error = function(e) { message(m,
+       " failed to fit: ", e$message); NULL }
   )
-
+ 
   gamlss_models[[m]] <- fit
 }
-
+ 
 # dropping any models  that failed to fit
 gamlss_models <- gamlss_models[!sapply(gamlss_models, is.null)]
-names(gamlss_models)
-
+names(gamlss_models) #all modesl were fit successfully
+ 
 # AIC comparison
  sapply(gamlss_models, GAIC)#AIC ranks are similar to those for original models
 model_perform_summary|>
   filter(Name %in% chosen_models)|>
   select(Name, AIC) 
-#Comparing different distributionw------------------------------------------------
-# In te previous section, models were fit using ST3 distribution
-# Here I comparing the best fit ST3 model
-# with other types of skewed t-distributions
-
-#selecting the best ST3 model
-best_gamlss_name <- names(gamlss_models)[
-  which.min(sapply(gamlss_models, GAIC))]
-best_gamlss_model <- gamlss_models[[best_gamlss_name]]
-
-best_mean_formula <- formula(best_gamlss_model)  
-st_families <- c("ST1", "ST2", "ST3", "ST4", "ST5")
-
-#Parallelizng
-n_cores <- max(1, parallel::detectCores() - 2)
-cl <- makeCluster(n_cores, type = "PSOCK")
-clusterEvalQ(cl, library(gamlss))
-clusterExport(cl, varlist = c("best_mean_formula",
- "skewt_formula", "growth_dat"))
- 
-#Fitting models
-st_models_list <- parLapply(cl, st_families, function(fam) {
-  tryCatch(
-    gamlss(
-      formula = best_mean_formula,
-      sigma.formula = skewt_formula$sigma.formula,
-      nu.formula = skewt_formula$nu.formula,
-      tau.formula = skewt_formula$tau.formula,
-      family = fam,
-      data = growth_dat),
-    error = function(e) NULL
-  )
-})
- 
-stopCluster(cl)
-
-names(st_models_list) <- paste0(best_gamlss_name,
-   "__", st_families)
-
-#checking if any models failed to fit
-failed_st <- st_families[sapply(st_models_list, is.null)]
-if (length(failed_st) > 0) message("Failed to fit: ", paste(failed_st, collapse = ", "))
-st_models <- st_models_list[!sapply(st_models_list, is.null)]
-names(st_models)
- 
-# AIC comparison 
-st_gaic <- tibble::tibble(
-  Family = names(st_models),
-  AIC = sapply(st_models, GAIC))
-st_gaic |> arrange(AIC) #ST3 model is the best
  
 #Model diagnostics for skew-t models------------------------------------------------
-# DHARMa does not support gamlss objects directly, so diagnostics use
-# gamlss's own quantile-residual tools instead (4-panel plot + worm plot)
 
 for (m in names(gamlss_models)) {
   model <- gamlss_models[[m]]
-  plot(model, main = m)          # prints the quantile-residual summary as a side effect
+  hist(residuals(model), main = m)
   dev.new()
-  wp(model, ylim.all = 2)        # worm plot; ylim.all set generously to avoid clipped points
+  plot(model, main = m)          
+  dev.new()
+  wp(model, ylim.all = 2) # worm plot
   title(main = m)
   dev.new()
 }
+
+#Checking for remaining skewness/kurtosis after the ST3 fit------------------------------------------------
+
+#choosing one model for running the diagnostics on
+diag_model_gamlss <- gamlss_models[[chosen_models[1]]]
+ 
+#extracting fitted values and residuals
+growth_dat$fitted_mean_gamlss <- 
+  predict(diag_model_gamlss, what = "mu", type = "response")
+growth_dat$gamlss_qresid <- resid(diag_model_gamlss)   # ~N(0,1) if the model is correctly specified
+ 
+#fitting quantile regressions to the residuals
+qgam_fits_gamlss <- lapply(taus, function(tau) {
+  qgam(gamlss_qresid ~ s(fitted_mean_gamlss, k = 4), 
+  data = growth_dat, qu = tau)
+})
+names(qgam_fits_gamlss) <- paste0("q", taus)
+
+#generating predicted values from the quantile regressions
+pred_grid2 <- data.frame(fitted_mean_gamlss = 
+  seq(min(growth_dat$fitted_mean_gamlss),
+      max(growth_dat$fitted_mean_gamlss),
+        length.out = 200))
+for (tau in taus) {
+  pred_grid2[[paste0("q", tau)]] <- 
+    predict(qgam_fits_gamlss[[paste0("q", tau)]], newdata = pred_grid2)
+}
+ 
+#calculating NP skewness and NP kurtosis
+pred_grid2$NP_skewness <- 
+  (pred_grid2$q0.1 + pred_grid2$q0.9 - 2*pred_grid2$q0.5) /
+  (pred_grid2$q0.9 - pred_grid2$q0.1)
+pred_grid2$NP_kurtosis <- 
+  (pred_grid2$q0.95 - pred_grid2$q0.05) /
+  (pred_grid2$q0.75 - pred_grid2$q0.25)
+pred_grid2$NP_excess_kurtosis <- pred_grid2$NP_kurtosis / gaussian_np_kurtosis - 1
+ 
+#Plotting residuals vs fitted values, with quantile regression lines
+quantile_long2 <- pred_grid2 |>
+  select(fitted_mean_gamlss, starts_with("q0")) |>
+  pivot_longer(-fitted_mean_gamlss, names_to = "quantile", 
+    values_to = "value")
+ 
+p_resid2 <- ggplot() +
+  geom_point(data = growth_dat, aes(fitted_mean_gamlss, gamlss_qresid), alpha = 0.15) +
+  geom_line(data = quantile_long2, aes(fitted_mean_gamlss, value, group = quantile)) +
+  theme_bw() +
+  labs(x = "Fitted log(HT_next) (gamlss mu)", y = "Quantile residual",
+       title = "gamlss quantile residuals and quantile trends")
+p_resid2
+ 
+#Plotting NP skewness and NP kurtosis vs fitted values
+p_skew_kurt2 <- ggplot(pred_grid2) +
+  geom_hline(yintercept = 0, lty = "dashed", col = "grey50") +
+  geom_line(aes(fitted_mean_gamlss, NP_skewness),
+                           col = "blue", linewidth = 1) +
+  geom_line(aes(fitted_mean_gamlss, NP_excess_kurtosis),
+                       col = "red", linewidth = 1) +
+  theme_bw() +
+  labs(x = "Fitted log(HT_next) (gamlss mu)",
+       y = "NP skewness (blue) / NP excess kurtosis (red)",
+       title = 
+        "Remaining NP skewness/kurtosis after ST3 fit, vs. predicted size")
+p_skew_kurt2
+ 
+#Cross-validating skew-t models------------------------------------------------
+# Time-series (expanding window) CV only,
+#  reusing the same folds already set up for the glmmTMB CV above. 
+# Spatial (LOSO) CV is not run here - 
+# gamlss's random() term has no clean equivalent of glmmTMB's
+# re.form = NA for predicting onto entirely new grouping levels
+
+# 3 folds x 4 models = 12 independent tasks 
+# flattening these 12 tasks into a single grid 
+# for parallel processing
+cv_tasks <- expand.grid(fold = 1:folds, 
+  model_name = names(gamlss_models),
+                         stringsAsFactors = FALSE)
+ 
+# Extracting formula components from each fitted model
+model_formulas    <- lapply(gamlss_models, formula)
+model_sigma_forms <- lapply(gamlss_models, function(x) x$sigma.formula)
+model_nu_forms    <- lapply(gamlss_models, function(x) x$nu.formula)
+model_tau_forms   <- lapply(gamlss_models, function(x) x$tau.formula)
+
+# Creating cluster for parallel processing
+n_cores <- 10
+cl <- makeCluster(n_cores, type = "PSOCK")
+clusterEvalQ(cl, library(gamlss))
+clusterExport(cl, varlist = c("cv_tasks", "growth_dat", "census_levels",
+                              "min_training_size", "test_size",
+                              "model_formulas", "model_sigma_forms",
+                              "model_nu_forms", "model_tau_forms",
+                              "mse", "mae"))
+
+#running CV loop                              
+cv_results_list <- parLapply(cl, 
+  seq_len(nrow(cv_tasks)), function(row_i) {
+  i <- cv_tasks$fold[row_i]
+  m <- cv_tasks$model_name[row_i]
+ 
+  train_censuses <- census_levels[1:(min_training_size+i-1)]
+  test_censuses  <- census_levels[(min_training_size+i):
+    (min_training_size+i+test_size-1)]
+ 
+  TrainDat <- growth_dat[growth_dat$CENSUS_NUM %in% train_censuses, ]
+  TestDat  <- growth_dat[growth_dat$CENSUS_NUM %in% test_censuses, ]
+ 
+  tryCatch({
+    new_model <- gamlss(
+      formula = model_formulas[[m]],
+      sigma.formula = model_sigma_forms[[m]],
+      nu.formula = model_nu_forms[[m]],
+      tau.formula = model_tau_forms[[m]],
+      family = ST3,
+      data = TrainDat)
+ 
+    preds <- predict(new_model, newdata = TestDat, data = TrainDat,
+                      what = "mu", type = "response")
+ 
+    data.frame(fold = i, Name = m,
+               MSE = mse(preds, log(TestDat$HT_next)),
+               MAE = mae(preds, log(TestDat$HT_next)),
+               error = NA_character_)
+  }, error = function(e) {
+    data.frame(fold = i, Name = m, MSE = NA_real_, MAE = NA_real_,
+               error = conditionMessage(e))
+  })
+})
+ 
+stopCluster(cl)
+ 
+cv_results <- bind_rows(cv_results_list)
+ 
+# checking for any failed fold/model combinations
+if (any(!is.na(cv_results$error))) {
+  print(cv_results[!is.na(cv_results$error), 
+    c("fold", "Name", "error")]) #no errors
+}
+ 
+# reshaping results into the same wide format as the glmmTMB CV tables
+gamlss_perform <- cv_results |>
+  select(fold, Name, MSE, MAE) |>
+  pivot_wider(names_from = fold, values_from = c(MSE, MAE),
+              names_glue = "TSV{fold}_{.value}")
+ 
+gamlss_perform |>
+  rowwise() |>
+  mutate(mean_TSV_MSE = mean(c_across(starts_with("TSV") & 
+    ends_with("MSE")), na.rm = TRUE)) |>
+  arrange(mean_TSV_MSE)
+ 
+gamlss_perform |>
+  rowwise() |>
+  mutate(mean_TSV_MAE = mean(c_across(starts_with("TSV") &
+   ends_with("MAE")), na.rm = TRUE)) |>
+  arrange(mean_TSV_MAE)|>View()
