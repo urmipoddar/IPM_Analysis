@@ -14,9 +14,9 @@ library(DHARMa)
 library(broom.mixed)
 
 pines_long <- read.csv("Data/pine_demography_cleaned_long.csv")
-plot_info <- read.csv("Data/plot_information.csv")
+
 #Functions---------------------------------------------------
-#Redefining functions for brier score and logloss
+#Defining functions for brier score and logloss
 brier_score <- function(pred, obs){
   return(mean((obs - pred)^2))}
 
@@ -26,9 +26,6 @@ logloss <- function(pred, obs){
   return(-mean(obs * log(pred) +
       (1 - obs) * log(1 - pred)))}
 #Data formatting---------------------------------------------------
-#adding plot information
-plot_info <- plot_info|>
-  select(!c(SUBPLOT, AREA, PLTAREA, SDLAREA, TMT))
 
 #Converting census start date column to Date format
 pines_long <- pines_long|>
@@ -43,7 +40,7 @@ pines_long$SITEAREA <- factor(pines_long$SITEAREA,
                                     "RP2"))
 
 #Adding column for time since fires
-fire_date <- as.Date("06/01/95",format= "%m/%d/%y")
+fire_date <- as.Date("09/01/95",format= "%m/%d/%y")
 pines_long <- pines_long|>
   mutate(TimeSinceFire = 
            time_length(difftime(START_DATE, fire_date),"years"))
