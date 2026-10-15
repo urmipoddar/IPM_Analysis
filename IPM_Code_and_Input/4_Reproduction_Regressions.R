@@ -74,4 +74,18 @@ ggplot(cone15, aes(HT, CONE_Mature))+
   geom_point( aes(HT, pred_cone), size =1)
 
 #Modeling serotiny-----------------------------------------
-    
+mSer <- glmmTMB(SEROTINY_binary ~ 
+  AREA + (1 | PLOTCODE), 
+  family = binomial, data = cone15)
+mSer
+summary(mSer)
+
+#checking for convergence issues etc.
+mSer$fit$convergence #no issues
+
+#checking rsiduals
+simulateResiduals(mSer, plot=T) #residuals look fine
+
+#Saving models---------------------------------
+models <- list(mCone = mCone_lht_nb, mSer = mSer)
+saveRDS(models,"Output/ConeProductionModels.rds")
