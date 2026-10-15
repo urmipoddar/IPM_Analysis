@@ -14,7 +14,6 @@ library(performance)
 library(DHARMa)
 
 pines_long <- read.csv("Data/pine_demography_cleaned_long.csv")
-plot_info <- read.csv("Data/plot_information.csv")
 
 #Functions--------------------------------------------------
 #Mean Squared Error
@@ -38,11 +37,7 @@ translate_to_gamlss_formula <- function(glmmTMB_formula){
   as.formula(f_chr)
 }
 
-
 #Data formatting---------------------------------------------------
-#adding plot information
-plot_info <- plot_info|>
-  select(!c(SUBPLOT, AREA, PLTAREA, SDLAREA, TMT))
 
 #Converting census start date column to Date format
 pines_long <- pines_long|>
@@ -57,7 +52,7 @@ pines_long$SITEAREA <- factor(pines_long$SITEAREA,
                                     "RP2"))
 
 #Adding column for time since fires
-fire_date <- as.Date("06/01/95",format= "%m/%d/%y")
+fire_date <- as.Date("09/01/95",format= "%m/%d/%y")
 pines_long <- pines_long|>
   mutate(TimeSinceFire = 
            time_length(difftime(START_DATE, fire_date),"years"))
@@ -163,7 +158,7 @@ mGrwt_ht_area_htarea_time <- glmmTMB(log(HT_next) ~
 
 #Height, AREA & time since fire, height x area interaction, quadratic ht
 mGrwt_ht2_area_htarea_time <- glmmTMB(log(HT_next) ~ 
-  poly(log(HT),2)*AREA + TimeSinceFire + CensusInterval+
+  log(HT)*AREA + I(log(HT)^2)*AREA+ TimeSinceFire + CensusInterval+
   (1|PLOTCODE)+(1|IND_ID), data = growth_dat,
     family = t_family(),
   dispformula = ~ log(HT))
@@ -774,8 +769,8 @@ p_skew_kurt2 <- ggplot(pred_grid2) +
        y = "NP skewness (blue) / NP excess kurtosis (red)",
        title = 
         "Remaining NP skewness/kurtosis after ST3 fit, vs. predicted size")
-p_skew_kurt2
- 
+p_skew_kurt2 #skewness and kurtosis are much lower than before
+p_skew_kurt
 #Cross-validating skew-t models------------------------------------------------
 # Time-series (expanding window) CV only,
 #  reusing the same folds already set up for the glmmTMB CV above. 
@@ -857,14 +852,20 @@ gamlss_perform <- cv_results |>
   pivot_wider(names_from = fold, values_from = c(MSE, MAE),
               names_glue = "TSV{fold}_{.value}")
  
-gamlss_perform |>
+gamlss_perform <- gamlss_perform |>
   rowwise() |>
   mutate(mean_TSV_MSE = mean(c_across(starts_with("TSV") & 
     ends_with("MSE")), na.rm = TRUE)) |>
   arrange(mean_TSV_MSE)
  
-gamlss_perform |>
+gamlss_perform <-gamlss_perform |>
   rowwise() |>
   mutate(mean_TSV_MAE = mean(c_across(starts_with("TSV") &
    ends_with("MAE")), na.rm = TRUE)) |>
-  arrange(mean_TSV_MAE)|>View()
+  arrange(mean_TSV_MAE)
+
+View(gamlss_perform) #Predictive accuracy is higher than that of non-skew models
+
+saveRDS(gamlss_models[gamlss_perform$Name],
+   "Output/GrowthModels.rds")
+
