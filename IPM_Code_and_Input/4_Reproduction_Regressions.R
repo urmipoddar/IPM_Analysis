@@ -27,7 +27,7 @@ cones <- pines_long|>
   filter(STAT==1)|>
   filter(!is.na(CONE_Mature) & !is.na(HT))
 
-#keeping data from census 15 only (for modeling serotiny)
+#keeping data from census 15 only 
 cone15 <- cones|>filter(CENSUS_NUM == 15)|>
   mutate(SEROTINY = ifelse(SEROTINY=="", NA, SEROTINY))|>
   #converting serotiny into a binary column
@@ -74,18 +74,24 @@ ggplot(cone15, aes(HT, CONE_Mature))+
   geom_point( aes(HT, pred_cone), size =1)
 
 #Modeling serotiny-----------------------------------------
-mSer <- glmmTMB(SEROTINY_binary ~ 
-  AREA + (1 | PLOTCODE), 
+mSer <- glm(SEROTINY_binary ~ AREA , 
   family = binomial, data = cone15)
 mSer
 summary(mSer)
 
-#checking for convergence issues etc.
-mSer$fit$convergence #no issues
-
-#checking rsiduals
+#checking residuals
 simulateResiduals(mSer, plot=T) #residuals look fine
 
+#comparing predicted and observed proportions
+cone15$pred_serotiny <- predict(mSer, 
+    type = "response", newdata = cone15)
+cone15|>
+  filter(!is.na(SEROTINY_binary))|>
+  group_by(AREA)|>
+  summarise(NumSer = sum(SEROTINY_binary),
+    NumObs=n(), PredictedProp = mean(pred_serotiny))|>
+  mutate(ObservedProp = NumSer/NumObs) 
+#predicted and observed proportions match
 #Saving models---------------------------------
 models <- list(mCone = mCone_lht_nb, mSer = mSer)
 saveRDS(models,"Output/ConeProductionModels.rds")
