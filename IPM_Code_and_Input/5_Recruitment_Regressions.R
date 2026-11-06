@@ -16,7 +16,7 @@ library(gamlss)
 pines_long <- read.csv("Data/pine_demography_cleaned_long.csv")
 plot_info <- read.csv("Data/plot_information.csv")
 
-#Data formatting---------------------------------------------------
+#Formatting full dataframe---------------------------------------------------
 #Converting area and site area to factors
 pines_long$AREA <- factor(pines_long$AREA, 
                           levels = c("DW", "SCC", "RP"))
@@ -35,15 +35,16 @@ cones_after_fire <- plot_info|>
   dplyr::select(OLDCODE, CONES1, PLTAREA)|>
   rename(PLOTCODE = OLDCODE)
 
+#Formatting cohort 1 and 2 data----------------------
 #Calculating number of new recruits per census
 recruits <- pines_long|>
   group_by(PLOTCODE, AREA,
      SITEAREA, CENSUS_NUM, START_DATE, SDLAREA)|>
   summarise(NumRecruits = sum(COHORT==CENSUS_NUM))
 
-#recruitment in first year of study 
-# i.e. ~ 1 yr after fire (census 1 and 2)
-recruits1 = recruits|>
+#Creating dataframe for recruitment in first year of study 
+# i.e.census 1 and 2 (within ~1 yr of fire)
+recruits1 <- recruits|>
   filter(CENSUS_NUM %in% c(1,2))|>
   group_by(PLOTCODE, AREA, SITEAREA, SDLAREA)|>
   #summing up the number of recruits founds in census 1 and 2
@@ -71,18 +72,51 @@ cohorts1_2 <- pines_long|>
   #renaming HT_3 column
   rename(HT = HT_3)
 
-#Dataframe for size (height) of first two cohorts at census 3
+#Creating dataframe for size (height) of first two cohorts 
+# at census 3
 cohorts1_2_alive3 <- cohorts1_2|>
   #keeping only individuals that were alive at census 3
   filter(alive3==1)
 
-#Dataframe for size of new recruits at first detection
-#for cohort 3 
-cohort3_ht0 <- pines_long|>
-  filter(COHORT ==3  & CENSUS_NUM ==3)|>
-  filter(STAT == 1)|>
-  filter(!is.na(HT))
+#Formatting corhort 3+ data-----------------------------
+#Counting the number of recruits in each year
+ 
+#Map each census to the growing year it captures
+# Spring censuses (3,5,7,9) catch that spring's germinants 
+# Fall censuses (4,6,8,10) considered part same growing year
+#  Censuses 12-15 are ~2 years apart, so each spans two germination seasons (Interval = 2).
+season_map <- tibble(
+  COHORT = 3:15,
+  Year = c(1997, 1997, 1998, 1998,
+     1999, 1999, 2000, 2000, 2001,
+             2002.5, 2004.5, 2006.5, 2008.5),
+  Interval  = c(rep(1, 9), rep(2, 4)))
+season_map
 
+#dataframe for plot level attributes
+plots <- pines_long|>
+  distinct(PLOTCODE, SITEAREA, AREA, SDLAREA)
+ 
+#Counting number of recruits per plot x census
+recruits_2plus <- pines_long |>
+  distinct(IND_ID, PLOTCODE, COHORT) |>
+  filter(COHORT >= 3) |>
+  count(PLOTCODE, COHORT, name = "n")
+
+#Adding zeros for plots without any recruits
+ recruits2plus_allplots <- 
+  expand_grid(plots, COHORT = 3:15) |> # every plot x census
+  left_join(recruits_2plus, by = c("PLOTCODE", "COHORT")) |>
+  mutate(n = coalesce(n, 0L)) |>
+  left_join(season_map, by = "COHORT") |>
+  group_by(PLOTCODE, SITEAREA, AREA, SDLAREA, Year, Interval) %>%
+  summarise(NumRecruits = sum(n), .groups = "drop") |>
+  # Time since fire at ~June 1 of the germination season (midpoint for 2-season bins),
+  # fire = 1995-09-01
+  mutate(TimeSinceFire  = Year - 1995,
+         AREA = factor(AREA))
+
+nrow(recruits2plus_allplots)
 #Year 1 recruitment EDA----------------------------------
 ggplot(recruits1, aes(CONES1, NumRecruits))+
   geom_point(pch = 21, size = 3)+
@@ -305,7 +339,7 @@ for (a in levels(cohorts1_2_alive3_htmeas$AREA)) {
   zz <- z3[cohorts1_2_alive3_htmeas$AREA == a]
   qqnorm(zz, main = a); qqline(zz)
 } #residuals quantiles now mostly align with the expected line
-
+dev.new()
 
 #Model comparison - AICs
 AIC(mSize1_1)
@@ -314,4 +348,15 @@ GAIC(mSize1_3) #lowest AIC
 
 #final model
 mSize1 <- mSize1_3
+
+#Year 2+ recruitment model------------------------
+
+m_exp <- glmmTMB(
+  NumRecruits ~ AREA + TimeSinceFire +
+    offset(log(SDLAREA)) + offset(log(Interval)) +
+     (1 | PLOTCODE),
+  family = nbinom2, data = recruits2plus_allplots)
+summary(m_exp)
+simulateResiduals(m_exp, plot = T)
+AIC(m_exp)
 
