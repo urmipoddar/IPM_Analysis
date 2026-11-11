@@ -685,10 +685,10 @@ num_alive_c1|>
 #Number of new recruits per census
 p_recruits <- ggplot(recruits, 
           aes(CENSUS_NUM, NumRecruits,
-          group=PLOTCODE, fill = AREA ))+
+          group=PLOTCODE, fill = AREA.x ))+
   geom_line(alpha = 0.2)+
   geom_point(pch=21, alpha = 0.5)+
-  theme_bw()+facet_wrap(vars(AREA))+
+  theme_bw()+facet_wrap(vars(AREA.x))+
   xlab("Census Number")+ylab("Number of Recruits")
 p_recruits
 
@@ -697,9 +697,9 @@ p_recruits
 p_recruits_2plus_censusnum <- recruits|>
   filter(CENSUS_NUM>1)|>
   ggplot(aes(CENSUS_NUM, NumRecruits,
-             group=PLOTCODE,fill = AREA ))+
+             group=PLOTCODE,fill = AREA.x ))+
   geom_point(pch=21, alpha = 0.4, size =2)+
-  theme_bw()+facet_wrap(vars(AREA))+
+  theme_bw()+facet_wrap(vars(AREA.x))+
   ylim(0,25)+xlab("Census Number")+
   ylab("Number of Recruits")
 p_recruits_2plus_censusnum
