@@ -35,7 +35,7 @@ cones_after_fire <- plot_info|>
   dplyr::select(OLDCODE, CONES1, PLTAREA)|>
   rename(PLOTCODE = OLDCODE)
 
-#Formatting cohort 1 and 2 data----------------------
+#Formatting cohort 1 and 2 data----------------------------------
 #Calculating number of new recruits per census
 recruits <- pines_long|>
   group_by(PLOTCODE, AREA,
@@ -47,13 +47,14 @@ recruits <- pines_long|>
 recruits1 <- recruits|>
   filter(CENSUS_NUM %in% c(1,2))|>
   group_by(PLOTCODE, AREA, SITEAREA, SDLAREA)|>
-  #summing up the number of recruits founds in census 1 and 2
+  #summing up the number of recruits found in census 1 and 2
   summarise(NumRecruits = sum(NumRecruits))|>
   #joining with cones after fire dataframe
   left_join(cones_after_fire)|>
   ungroup()
 
 #Creating dataframe for survival of first 2 cohorts 
+#in their first year of life (i.e. up to census 3)
 cohorts1_2 <- pines_long|>
   filter(COHORT %in% c(1,2) & CENSUS_NUM %in% 1:3)|>
   dplyr::select(IND_ID, AREA, SITEAREA, 
@@ -81,7 +82,7 @@ cohorts1_2_alive3 <- cohorts1_2|>
 #Formatting corhort 3+ data-----------------------------
 #Counting the number of recruits in each year
  
-#Map each census to the growing year it captures
+#Mapping each census to the growing year it captures
 # Spring censuses (3,5,7,9) catch that spring's germinants 
 # Fall censuses (4,6,8,10) considered part same growing year
 #  Censuses 12-15 are ~2 years apart, so each spans two germination seasons (Interval = 2).
@@ -117,6 +118,26 @@ recruits_2plus <- pines_long |>
          AREA = factor(AREA))
 
 nrow(recruits2plus_allplots)
+
+#Data frame for height of cohort 3+ at first detection
+cohort3plus_ht <- pines_long|>
+  filter(COHORT %in% c(3,5, 7, 9))|>
+  filter(CENSUS_NUM==COHORT)|>
+  filter(STAT ==1)|>
+  filter(!is.na(HT))
+
+#checking sample size for each AREA
+cohort3plus_ht|>
+  group_by(AREA)|>
+  summarise(n=n(), 
+  meanHT = mean(HT),
+  sdHT = sd(HT)) #only 14 points for SCC
+
+#Creating a column for SCC and RP combined
+cohort3plus_ht <- cohort3plus_ht|>
+  mutate(AREA_combined = ifelse(AREA == "RP",
+      "RP", "DW_SCC"))
+
 #Year 1 recruitment EDA----------------------------------
 ggplot(recruits1, aes(CONES1, NumRecruits))+
   geom_point(pch = 21, size = 3)+
@@ -242,7 +263,7 @@ prop_meas
 #uneven coverage of height measurements within DW:
 #DW3 has the highest number & fraction of seedlings measured
 #and has a lower mean height than rest of the DW SITEAREAs
-#Year 1 size distribution Model--------------------------------------
+#Year 1 size distribution model--------------------------------------
 #Model fitting for size distribution of seedlings at ~1 year age
 #i.e. size distribution of cohort 1 & 2 at census 3
 
@@ -350,7 +371,6 @@ GAIC(mSize1_3) #lowest AIC
 mSize1 <- mSize1_3
 
 #Year 2+ recruitment model------------------------
-
 m_exp <- glmmTMB(
   NumRecruits ~ AREA + TimeSinceFire +
     offset(log(SDLAREA)) + offset(log(Interval)) +
@@ -360,3 +380,17 @@ summary(m_exp)
 simulateResiduals(m_exp, plot = T)
 AIC(m_exp)
 
+#Year 2+ size distribution-------------------------
+#size distribution of cohort 3+ at first detection
+
+#Fitting model: log normal model
+#with different variances for each population type (DW/SCC vs RP)
+mSize0 <- glmmTMB(log(HT)~AREA_combined, 
+  dispformula =  ~AREA_combined, family = "gaussian", 
+  data = cohort3plus_ht)
+
+#checking for convergence issues
+mSize0$fit$convergence #no issues
+
+#checking residuals
+simulateResiduals(mSize0, plot =T) #no issues
