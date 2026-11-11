@@ -45,33 +45,47 @@ pines_long <- pines_long|>
   mutate(TimeSinceFire = 
            time_length(difftime(START_DATE, fire_date),"years"))
 
+#Censuses used for survival analysis:
+# heights  only measured in spring censuses (3, 5, 7, 9) in 1997-1999,
+# so spring-to-spring intervals are used to capture annual mortality,
+# giving ~1 yr intervals until census 11 and ~2 yr intervals after.
+annual_censuses <- c(3, 5, 7, 9, 11:15)
+
 #creating dataframe for survival vs height analysis
 survival_dat <- pines_long|>
+  #keeping only the censuses used for survival analysis
+  filter(CENSUS_NUM %in% annual_censuses)|>
   arrange(IND_ID, CENSUS_NUM)|>
   group_by(IND_ID)|>
   #creating column for death (1 if dead, 0 if alive)
   mutate(Dead = case_when(STAT == 0 ~ 1L, 
                     STAT==1 ~ 0L, 
-                  .default = STAT))|>
+                  .default = NA))|>
   #pairing height & survival in census t with survival in census t+1
   mutate(STAT_next = lead(STAT),
         Dead_next = lead(Dead),
          CENSUS_next = lead(CENSUS_NUM),
          Date_next = lead(START_DATE))|>
-  #only keeping trees that were alive in census t
-  #and had height measurements in census t
+  #only keeping trees that were alive in census t,
+  #had height measurements in census t,
   #and had their survival recorded in census t+1
-  filter(STAT==1 & !is.na(STAT_next) & !is.na(HT))|>
+  filter(STAT==1 & !is.na(Dead_next) & !is.na(HT))|>
   #calculating time interval b/w censuses, in years
   mutate(CensusInterval = 
            time_length(difftime(Date_next, START_DATE),"years"))|>
-  mutate(CensusInterval = round(CensusInterval, digits = 1))
+  ungroup()
 
-#ensuring that only consecutive censuses are paired
-table(survival_dat$CENSUS_next - survival_dat$CENSUS_NUM) #everything is correct
+#ensuring that censuses are paired correctly
+table(survival_dat$CENSUS_NUM, survival_dat$CENSUS_next) #everything is correct
 
 #checking values of census interval
-table(survival_dat$CensusInterval) #looks correct
+#checking values of census interval
+survival_dat|>
+  group_by(CENSUS_NUM, CENSUS_next)|>
+  summarise(n = n(), 
+    MinInterval = min(CensusInterval), 
+    MaxInterval = max(CensusInterval),
+    MortRate = mean(Dead_next)) #looks correct
 
 #Fitting models----------------------------------------------------
 #Baseline model - random effects and time offset only
@@ -204,14 +218,12 @@ models <- list(
   mSurv_htS_area_htarea_time = mSurv_htS_area_htarea_time)
 
 #checking for singular fit issues, convergence issues,
-#  overdispersion and across-plots variation
+#   across-plots and acros-individual variation
 model_diagnostics <- tibble::tibble(
   Name = names(models),
   Singular = check_singularity(models),
   ConvergenceWarnings = sapply(models,
      \(x) x$fit$convergence),
-  DispersionRatio = sapply(models, \(x) 
-      check_overdispersion(x)$dispersion_ratio),
   AcrossPlotVar = sapply(models, \(x) 
           VarCorr(x)$cond$PLOTCODE|>as.numeric()|>sqrt()),
 AcrossIndVar = sapply(models, \(x) 
@@ -402,7 +414,7 @@ for( i in 1:folds){
     
     # tracking progress
     print(c(i,  m, check_singularity(new_model)))
-    print(model$fit$convergence)
+    print(new_model$fit$convergence)
   }
 }
 
@@ -464,7 +476,7 @@ for (i in 1:n_sites) {
 
     # tracking progress
     print(c(i, held_out_site, m, check_singularity(new_model)))
-    print(model$fit$convergence)
+    print(new_model$fit$convergence)
   }
 }
 
