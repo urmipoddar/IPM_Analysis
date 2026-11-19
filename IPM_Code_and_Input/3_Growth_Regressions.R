@@ -12,6 +12,7 @@ library(gamlss)
 library(qgam)
 library(performance)
 library(DHARMa)
+library(parallel)
 
 pines_long <- read.csv("Data/pine_demography_cleaned_long.csv")
 
@@ -129,7 +130,7 @@ mGrwt_ht_area_htarea <- glmmTMB(log(HT_next) ~
 
 #Height & AREA - ht x area interaction, quadratic height
 mGrwt_ht2_area_htarea <- glmmTMB(log(HT_next) ~ 
-  poly(log(HT),2)*AREA+ CensusInterval+
+  log(HT)*AREA + I(log(HT)^2)*AREA+ CensusInterval+
   (1|PLOTCODE)+(1|IND_ID), 
   data = growth_dat,
     family = t_family(),
@@ -144,7 +145,7 @@ mGrwt_ht_area_time <- glmmTMB(log(HT_next) ~
 
 #Height, AREA & time since fire, quadratic height
 mGrwt_ht2_area_time <- glmmTMB(log(HT_next) ~ 
-  poly(log(HT), 2)+AREA + TimeSinceFire + CensusInterval+
+  log(HT) + I(log(HT)^2)+AREA + TimeSinceFire + CensusInterval+
   (1|PLOTCODE)+(1|IND_ID), data = growth_dat,
     family = t_family(),
   dispformula = ~ log(HT))
@@ -168,9 +169,9 @@ mGrwt_ht2_area_htarea_time <- glmmTMB(log(HT_next) ~
 models <- list(
   mGrwt_baseline = mGrwt_baseline,
   mGrwt_ht_area = mGrwt_ht_area,
-  Grwt_ht2_area = mGrwt_ht2_area,
+  mGrwt_ht2_area = mGrwt_ht2_area,
   mGrwt_ht_area_htarea = mGrwt_ht_area_htarea,
-  Grwt_ht2_area_htarea = mGrwt_ht2_area_htarea,
+  mGrwt_ht2_area_htarea = mGrwt_ht2_area_htarea,
   mGrwt_ht_area_time = mGrwt_ht_area_time,
   mGrwt_ht2_area_time = mGrwt_ht2_area_time,
   mGrwt_ht_area_htarea_time = mGrwt_ht_area_htarea_time,
@@ -226,7 +227,7 @@ newdat <- expand.grid(
     length.out = 1000),
   AREA = levels(growth_dat$AREA),
   CensusInterval = 1,
-  TimeSinceFire = mean(growth_dat$TimeSinceFire, na.rm = TRUE))
+  TimeSinceFire = max(growth_dat$TimeSinceFire, na.rm = TRUE))
 
 # Predictions on the log scale
 newdat$PredLinear <- predict(
@@ -326,7 +327,7 @@ for(m in names(models)){
     family = t_family(),
     dispformula = model$modelInfo$allForm$dispformula)
   preds <- predict(new_model, newdata= TestDat, 
-            type = "response", re.form = NA)
+            type = "response", re.form = NULL)
   model_perform$TT_MSE[model_perform$Name ==m] <-
     mse(preds, log(TestDat$HT_next))
   model_perform$TT_MAE[model_perform$Name ==m] <-
@@ -390,7 +391,7 @@ for( i in 1:folds){
  
     #predicting heldout data
     preds <- predict(new_model, newdata= TestDat, 
-            type = "response", re.form = NA)
+            type = "response", re.form = NULL)
  
     #calculating accuracy
     MSE_val <- mse(preds, log(TestDat$HT_next))
@@ -614,7 +615,7 @@ top_mean_formula_gamlss <- translate_to_gamlss_formula(formula(models[[top_mean_
 st_families <- c("ST1", "ST2", "ST3", "ST4", "ST5")
  
 #Parallelizing code
-n_cores <- max(1, parallel::detectCores() - 2)
+n_cores <- 10
 cl <- makeCluster(n_cores, type = "PSOCK")
 clusterEvalQ(cl, library(gamlss))
 clusterExport(cl, varlist = c("top_mean_formula_gamlss",
@@ -778,9 +779,8 @@ p_skew_kurt
 # gamlss's random() term has no clean equivalent of glmmTMB's
 # re.form = NA for predicting onto entirely new grouping levels
 
-# 3 folds x 4 models = 12 independent tasks 
-# flattening these 12 tasks into a single grid 
-# for parallel processing
+
+# creating  grid of CV tasks (model x fold combinations) for parallel processing
 cv_tasks <- expand.grid(fold = 1:folds, 
   model_name = names(gamlss_models),
                          stringsAsFactors = FALSE)
@@ -864,7 +864,7 @@ gamlss_perform <-gamlss_perform |>
    ends_with("MAE")), na.rm = TRUE)) |>
   arrange(mean_TSV_MAE)
 
-View(gamlss_perform) #Predictive accuracy is higher than that of non-skew models
+View(gamlss_perform) 
 
 saveRDS(gamlss_models[gamlss_perform$Name],
    "Output/GrowthModels.rds")
