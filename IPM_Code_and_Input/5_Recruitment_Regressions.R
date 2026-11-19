@@ -10,7 +10,6 @@ library(tidyverse)
 library(glmmTMB)
 library(DHARMa)
 library(MASS)
-library(glmmTMB)
 library(gamlss)
 
 pines_long <- read.csv("Data/pine_demography_cleaned_long.csv")
@@ -121,7 +120,7 @@ nrow(recruits2plus_allplots)
 
 #Data frame for height of cohort 3+ at first detection
 cohort3plus_ht <- pines_long|>
-  filter(COHORT %in% c(3,5, 7, 9))|>
+  filter(COHORT %in% c(3,5, 7, 9, 10))|>
   filter(CENSUS_NUM==COHORT)|>
   filter(STAT ==1)|>
   filter(!is.na(HT))
@@ -371,14 +370,13 @@ GAIC(mSize1_3) #lowest AIC
 mSize1 <- mSize1_3
 
 #Year 2+ recruitment model------------------------
-m_exp <- glmmTMB(
+m_Recruit2plus <- glmmTMB(
   NumRecruits ~ AREA + TimeSinceFire +
     offset(log(SDLAREA)) + offset(log(Interval)) +
      (1 | PLOTCODE),
   family = nbinom2, data = recruits2plus_allplots)
-summary(m_exp)
-simulateResiduals(m_exp, plot = T)
-AIC(m_exp)
+summary(m_Recruit2plus)
+simulateResiduals(m_Recruit2plus, plot = T) #looks good
 
 #Year 2+ size distribution-------------------------
 #size distribution of cohort 3+ at first detection
@@ -394,3 +392,11 @@ mSize0$fit$convergence #no issues
 
 #checking residuals
 simulateResiduals(mSize0, plot =T) #no issues
+#Saving models---------------------------------
+models <- list(
+  mRecruit1 = mRecruit1,
+  mSurv1 = mSurv1, 
+  mSize1 = mSize1, 
+  m_Recruit2plus = m_Recruit2plus, 
+  mSize0 = mSize0)
+saveRDS(models,"Output/RecruitmentModels.rds")
